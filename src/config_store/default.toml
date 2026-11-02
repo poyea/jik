@@ -1,0 +1,13 @@
+# jik configuration.
+# All settings are optional. If you remove a line, jik uses the default value.
+
+[popup]
+# The position of the popup on the primary monitor. The popup does not cover the taskbar.
+# Use one of these values: top-left, top-center, top-right, center,
+#   bottom-left, bottom-center, bottom-right (default).
+position = "bottom-right"
+
+# If you do not answer, the popup skips the question after this number of seconds.
+# The Skip button shows the countdown. The countdown stops while the pointer is on the popup.
+# Use 0 to turn auto-skip off. Default: 30.
+auto_skip_seconds = 30

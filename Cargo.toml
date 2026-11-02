@@ -1,0 +1,43 @@
+[workspace]
+members = ["lib/winkit"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["John Law <poyea@pm.me>"]
+license-file = "LICENSE"
+repository = "https://github.com/poyea/jik/"
+homepage = "https://github.com/poyea/jik/"
+
+[package]
+name = "jik"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Pops up at random intervals and asks you a question."
+include = ["src/**/*", "build.rs", "LICENSE", "README.md"]
+license-file.workspace = true
+readme = "README.md"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://github.com/poyea/jik/README.md"
+keywords = ["quiz", "productivity", "teaching", "memorization", "spaced-repetition"]
+categories = ["gui"]
+publish = false
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+fastrand = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+winkit = { path = "lib/winkit" }
+
+[build-dependencies]
+embed-manifest = "1.5"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

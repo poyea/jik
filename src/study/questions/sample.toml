@@ -1,0 +1,27 @@
+# jik questions.
+# Each [[question]] must have a unique id, the question text, two or more choices, and the answer.
+# The answer must be the same as one of the choices.
+
+[[question]]
+id = "capital-france"
+text = "What is the capital of France?"
+choices = ["Berlin", "Paris", "Madrid", "Rome"]
+answer = "Paris"
+
+[[question]]
+id = "rust-ownership"
+text = "In Rust, what happens to a String when it is passed by value to a function?"
+choices = ["It is copied", "Ownership moves into the function", "It is borrowed immutably"]
+answer = "Ownership moves into the function"
+
+[[question]]
+id = "largest-planet"
+text = "Which planet is the largest in the solar system?"
+choices = ["Saturn", "Neptune", "Jupiter", "Earth"]
+answer = "Jupiter"
+
+[[question]]
+id = "h2o"
+text = "What is the chemical formula of water?"
+choices = ["H2O", "CO2", "O2", "NaCl"]
+answer = "H2O"
