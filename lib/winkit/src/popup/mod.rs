@@ -148,6 +148,11 @@ struct Fonts {
 }
 
 impl ChoicePopup {
+    /// The next popup shows at this anchor.
+    pub fn set_anchor(&mut self, anchor: Anchor) {
+        self.anchor = anchor;
+    }
+
     pub fn new(anchor: Anchor) -> Result<Self> {
         unsafe {
             let _ = RoInitialize(RO_INIT_SINGLETHREADED);

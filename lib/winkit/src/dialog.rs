@@ -28,7 +28,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     LB_ADDSTRING, LB_DELETESTRING, LB_GETCURSEL, LB_INSERTSTRING, LB_RESETCONTENT, LB_SETCURSEL,
     LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LoadCursorW, MB_ICONWARNING, MB_OK, MSG, MessageBoxW,
     NONCLIENTMETRICSW, PostQuitMessage, RegisterClassExW, SPI_GETNONCLIENTMETRICS, SPI_GETWORKAREA,
-    SW_SHOW, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SendMessageW,
+    SW_SHOWNORMAL, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SendMessageW,
     SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
     SystemParametersInfoW, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
     WM_NCDESTROY, WM_SETFONT, WNDCLASSEXW, WS_CAPTION, WS_CHILD, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE,
@@ -462,7 +462,10 @@ impl Dialog {
     /// Show the dialog and give each event to `handler` until it returns [`Flow::Close`].
     pub fn run(&mut self, mut handler: impl FnMut(&mut Dialog, Event) -> Flow) -> Result<Outcome> {
         unsafe {
-            let _ = ShowWindow(self.hwnd, SW_SHOW);
+            // The first ShowWindow of a process can use the show state from the shortcut or
+            // the parent process (for example, hidden or minimized). The second call is exact.
+            let _ = ShowWindow(self.hwnd, SW_SHOWNORMAL);
+            let _ = ShowWindow(self.hwnd, SW_SHOWNORMAL);
             let _ = SetForegroundWindow(self.hwnd);
             if let Some(first) = (0..self.controls.len())
                 .map(ControlId)
