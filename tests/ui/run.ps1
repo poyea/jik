@@ -30,3 +30,4 @@ if ($failed -gt 0) {
     exit 1
 }
 Write-Host 'All UI tests passed.' -ForegroundColor Green
+exit 0
