@@ -7,13 +7,12 @@ use anyhow::{Context, Result};
 use windows::Foundation::{Size, TimeSpan};
 use windows::Graphics::DirectX::{DirectXAlphaMode, DirectXPixelFormat};
 use windows::System::DispatcherQueueController;
-use windows::UI::Color;
 use windows::UI::Composition::Desktop::DesktopWindowTarget;
 use windows::UI::Composition::{
     CompositionDrawingSurface, CompositionGraphicsDevice, Compositor, ContainerVisual,
 };
 use windows::Win32::Foundation::{HWND, POINT};
-use windows::Win32::Graphics::Direct2D::Common::{D2D_RECT_F, D2D1_COLOR_F};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1CreateFactory, ID2D1Device, ID2D1DeviceContext,
     ID2D1Factory1,
@@ -30,7 +29,6 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_TEXT_METRICS, DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
-use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::System::WinRT::Composition::{
     ICompositionDrawingSurfaceInterop, ICompositorDesktopInterop, ICompositorInterop,
 };
@@ -40,82 +38,7 @@ use windows::Win32::System::WinRT::{
 use windows::core::{HSTRING, Interface, w};
 use windows_numerics::{Matrix3x2, Vector2};
 
-#[derive(Clone, Copy)]
-pub struct Theme {
-    pub tint: Color,
-    pub text: D2D1_COLOR_F,
-    pub button: D2D1_COLOR_F,
-    pub button_hover: D2D1_COLOR_F,
-    pub button_pressed: D2D1_COLOR_F,
-    pub button_border: D2D1_COLOR_F,
-    pub window_border: D2D1_COLOR_F,
-    pub correct: D2D1_COLOR_F,
-    pub wrong: D2D1_COLOR_F,
-    pub dark: bool,
-}
-
-const fn rgba(r: f32, g: f32, b: f32, a: f32) -> D2D1_COLOR_F {
-    D2D1_COLOR_F { r, g, b, a }
-}
-
-impl Theme {
-    const LIGHT: Theme = Theme {
-        tint: Color {
-            A: 161,
-            R: 243,
-            G: 243,
-            B: 243,
-        },
-        text: rgba(0.0, 0.0, 0.0, 0.9),
-        button: rgba(1.0, 1.0, 1.0, 0.45),
-        button_hover: rgba(1.0, 1.0, 1.0, 0.75),
-        button_pressed: rgba(1.0, 1.0, 1.0, 0.3),
-        button_border: rgba(0.0, 0.0, 0.0, 0.08),
-        window_border: rgba(0.0, 0.0, 0.0, 0.12),
-        correct: rgba(0.30, 0.78, 0.42, 0.85),
-        wrong: rgba(0.94, 0.40, 0.40, 0.85),
-        dark: false,
-    };
-
-    const DARK: Theme = Theme {
-        tint: Color {
-            A: 161,
-            R: 32,
-            G: 32,
-            B: 32,
-        },
-        text: rgba(1.0, 1.0, 1.0, 0.95),
-        button: rgba(1.0, 1.0, 1.0, 0.08),
-        button_hover: rgba(1.0, 1.0, 1.0, 0.16),
-        button_pressed: rgba(1.0, 1.0, 1.0, 0.04),
-        button_border: rgba(1.0, 1.0, 1.0, 0.1),
-        window_border: rgba(1.0, 1.0, 1.0, 0.12),
-        correct: rgba(0.13, 0.55, 0.27, 0.85),
-        wrong: rgba(0.72, 0.18, 0.18, 0.85),
-        dark: true,
-    };
-
-    pub fn current() -> Theme {
-        let mut value: u32 = 1;
-        let mut size = size_of::<u32>() as u32;
-        let status = unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
-                w!("AppsUseLightTheme"),
-                RRF_RT_REG_DWORD,
-                None,
-                Some(&mut value as *mut u32 as *mut _),
-                Some(&mut size),
-            )
-        };
-        if status.is_ok() && value == 0 {
-            Theme::DARK
-        } else {
-            Theme::LIGHT
-        }
-    }
-}
+use crate::theme::{Theme, rgba};
 
 /// Composition needs a dispatcher queue on the thread. A thread can have only one.
 pub fn dispatcher_queue() -> Result<DispatcherQueueController> {

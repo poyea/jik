@@ -8,6 +8,7 @@ pub mod autostart;
 pub mod dialog;
 pub mod popup;
 pub mod process;
+mod theme;
 pub mod tray;
 
 use anyhow::{Context, Result};

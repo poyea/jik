@@ -45,7 +45,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, PCWSTR, w};
 use windows_numerics::Vector2;
 
-use glass::{Graphics, Scene, Theme};
+use crate::theme::Theme;
+use glass::{Graphics, Scene};
 
 const CLASS_NAME: PCWSTR = w!("WinkitChoicePopup");
 const FADE_DURATION: Duration = Duration::from_millis(300);
