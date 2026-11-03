@@ -14,7 +14,7 @@ use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS,
     DeleteObject,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Threading::{
     CancelWaitableTimer, CreateWaitableTimerExW, INFINITE, SetWaitableTimer, TIMER_ALL_ACCESS,
 };
@@ -32,9 +32,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_LBUTTONUP, WM_NULL, WM_QUIT,
     WM_RBUTTONUP, WNDCLASSEXW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
-use windows::core::{HSTRING, PCWSTR, w};
+use windows::core::{BOOL, HSTRING, PCSTR, PCWSTR, w};
 
 const CLASS_NAME: PCWSTR = w!("WinkitTray");
+/// The numbers of the uxtheme.dll exports for dark menus. They have no names.
+const SET_PREFERRED_APP_MODE: u16 = 135;
+const ALLOW_DARK_MODE_FOR_WINDOW: u16 = 133;
+const FLUSH_MENU_THEMES: u16 = 136;
+/// The app mode that follows the Windows light or dark setting.
+const APP_MODE_ALLOW_DARK: i32 = 1;
 const WM_TRAY: u32 = WM_APP + 1;
 const ICON_ID: u32 = 1;
 const FIRST_ID: usize = 1;
@@ -173,6 +179,7 @@ impl Tray {
             )
             .context("CreateWindowExW(tray)")?;
             TASKBAR_CREATED.set(RegisterWindowMessageW(w!("TaskbarCreated")));
+            allow_dark_menus(hwnd);
 
             let icon = match create_icon(icon) {
                 Ok(icon) => icon,
@@ -423,6 +430,30 @@ fn create_icon(image: &IconImage) -> Result<HICON> {
         let _ = DeleteObject(color.into());
         let _ = DeleteObject(mask.into());
         icon.context("CreateIconIndirect")
+    }
+}
+
+/// Make the menus follow the Windows dark mode, as the menus of File Explorer do.
+/// Windows has no public API for this. uxtheme.dll exports the functions only by number, since
+/// Windows 10 version 1903. If a function is missing, the menus stay light.
+fn allow_dark_menus(hwnd: HWND) {
+    unsafe {
+        let Ok(uxtheme) = LoadLibraryW(w!("uxtheme.dll")) else {
+            return;
+        };
+        let export = |number: u16| GetProcAddress(uxtheme, PCSTR(number as usize as *const u8));
+        if let Some(f) = export(SET_PREFERRED_APP_MODE) {
+            let set: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(f);
+            set(APP_MODE_ALLOW_DARK);
+        }
+        if let Some(f) = export(ALLOW_DARK_MODE_FOR_WINDOW) {
+            let allow: unsafe extern "system" fn(HWND, BOOL) -> BOOL = std::mem::transmute(f);
+            let _ = allow(hwnd, TRUE);
+        }
+        if let Some(f) = export(FLUSH_MENU_THEMES) {
+            let flush: unsafe extern "system" fn() = std::mem::transmute(f);
+            flush();
+        }
     }
 }
 
