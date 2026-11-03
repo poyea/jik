@@ -28,6 +28,10 @@ foreach ($test in Get-ChildItem (Join-Path $PSScriptRoot '*.Tests.ps1')) {
     } catch {
         $failed++
         Write-Host "FAIL $($test.Name): $($_.Exception.Message)" -ForegroundColor Red
+        if ($env:GITHUB_ACTIONS -eq 'true') {
+            # An annotation shows the reason on the run page, also without the full log.
+            Write-Host "::error title=UI test failed: $($test.Name)::$($_.Exception.Message)"
+        }
         # What was on the screen when the test failed, if JIK_UI_SCREENSHOTS is set.
         Save-JikScreenshot "FAIL-$($test.BaseName)"
     }
