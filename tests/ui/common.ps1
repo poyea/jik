@@ -24,6 +24,7 @@ namespace JikUi {
         [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
         [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
+        [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
         [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
         [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
@@ -144,6 +145,46 @@ function Get-JikWindowRect([IntPtr] $Hwnd) {
 function Get-JikWorkArea {
     Add-Type -AssemblyName System.Windows.Forms
     [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+}
+
+# Save a PNG picture when JIK_UI_SCREENSHOTS names a folder (CI sets it). Without -Hwnd, the
+# picture is the whole screen. -FromScreen copies the window from the screen instead of asking
+# the window to draw itself: use it for the popup, because Windows composes its glass.
+# A problem with a picture gives a warning only: it must not make a test fail.
+function Save-JikScreenshot([string] $Name, [IntPtr] $Hwnd = [IntPtr]::Zero, [switch] $FromScreen) {
+    $folder = $env:JIK_UI_SCREENSHOTS
+    if (-not $folder) { return }
+    try {
+        Add-Type -AssemblyName System.Drawing
+        Add-Type -AssemblyName System.Windows.Forms
+        New-Item -ItemType Directory -Force -Path $folder | Out-Null
+        if ($Hwnd -eq [IntPtr]::Zero) {
+            $area = [System.Windows.Forms.SystemInformation]::VirtualScreen
+            $left, $top, $width, $height = $area.Left, $area.Top, $area.Width, $area.Height
+        } else {
+            $rect = Get-JikWindowRect $Hwnd
+            $left, $top = $rect.Left, $rect.Top
+            $width, $height = ($rect.Right - $rect.Left), ($rect.Bottom - $rect.Top)
+        }
+        $picture = New-Object System.Drawing.Bitmap $width, $height
+        $graphics = [System.Drawing.Graphics]::FromImage($picture)
+        try {
+            if ($Hwnd -eq [IntPtr]::Zero -or $FromScreen) {
+                $graphics.CopyFromScreen($left, $top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+            } else {
+                $hdc = $graphics.GetHdc()
+                # PW_RENDERFULLCONTENT: also windows that another window covers.
+                [JikUi.Native]::PrintWindow($Hwnd, $hdc, 2) | Out-Null
+                $graphics.ReleaseHdc($hdc)
+            }
+            $picture.Save((Join-Path $folder "$Name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+        } finally {
+            $graphics.Dispose()
+            $picture.Dispose()
+        }
+    } catch {
+        Write-Warning "No screenshot '$Name': $($_.Exception.Message)"
+    }
 }
 
 # A left click at client coordinates, as the mouse sends it.

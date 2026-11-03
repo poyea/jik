@@ -6,6 +6,7 @@
 # answers a popup, and the pointer on a popup stops its countdown.
 # One test covers the whole screen with a dark window for about 6 seconds, as a full-screen
 # game does. It runs only in CI, or when JIK_UI_FULLSCREEN is 1.
+# Set JIK_UI_SCREENSHOTS to a folder to keep PNG pictures of the windows (CI does this).
 #
 #   powershell -ExecutionPolicy Bypass -File tests\ui\run.ps1
 
@@ -18,6 +19,8 @@ try {
     Pop-Location
 }
 
+. (Join-Path $PSScriptRoot 'common.ps1')
+
 $failed = 0
 foreach ($test in Get-ChildItem (Join-Path $PSScriptRoot '*.Tests.ps1')) {
     try {
@@ -25,6 +28,8 @@ foreach ($test in Get-ChildItem (Join-Path $PSScriptRoot '*.Tests.ps1')) {
     } catch {
         $failed++
         Write-Host "FAIL $($test.Name): $($_.Exception.Message)" -ForegroundColor Red
+        # What was on the screen when the test failed, if JIK_UI_SCREENSHOTS is set.
+        Save-JikScreenshot "FAIL-$($test.BaseName)"
     }
 }
 if ($failed -gt 0) {

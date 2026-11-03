@@ -27,7 +27,17 @@ jobs:
       run: cargo build --verbose --workspace --release
     - name: UI tests
       shell: pwsh
+      env:
+        JIK_UI_SCREENSHOTS: ${{ github.workspace }}\ui-screenshots
       run: ./tests/ui/run.ps1
+    - name: Upload UI screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ui-screenshots
+        path: ui-screenshots
+        retention-days: 7
+        if-no-files-found: ignore
     - uses: actions/upload-artifact@v4
       with:
         name: jik-${{ matrix.target }}
