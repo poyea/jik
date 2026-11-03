@@ -8,6 +8,7 @@ pub mod autostart;
 pub mod dialog;
 pub mod placement;
 pub mod popup;
+pub mod presence;
 pub mod process;
 mod theme;
 pub mod tray;

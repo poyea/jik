@@ -19,6 +19,8 @@ pub enum Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Wake {
     Due,
+    /// The user unlocked the session.
+    Unlocked,
     Command(Command),
     Quit,
 }
@@ -66,6 +68,7 @@ impl Tray {
     pub fn wait(&self, until: Option<DateTime<Utc>>) -> Result<Wake> {
         Ok(match self.inner.wait(until.map(Into::into))? {
             tray::Wake::Deadline => Wake::Due,
+            tray::Wake::SessionUnlocked => Wake::Unlocked,
             tray::Wake::Quit => Wake::Quit,
             tray::Wake::Command(id) => match command(id) {
                 Some(c) => Wake::Command(c),

@@ -79,18 +79,24 @@ function Start-Jik([string] $Dir, [string[]] $Arguments) {
     Start-Process @params
 }
 
+# A top-level window of the process with the given window class, or zero if there is none.
+function Find-JikWindow($Process, [string] $Class) {
+    $hwnd = [IntPtr]::Zero
+    while ($true) {
+        $hwnd = [JikUi.Native]::FindWindowOfClass([IntPtr]::Zero, $hwnd, $Class, [IntPtr]::Zero)
+        if ($hwnd -eq [IntPtr]::Zero) { return $hwnd }
+        $owner = [uint32]0
+        [JikUi.Native]::GetWindowThreadProcessId($hwnd, [ref] $owner) | Out-Null
+        if ($owner -eq $Process.Id) { return $hwnd }
+    }
+}
+
 # Wait for a top-level window of the process with the given window class.
 function Wait-JikWindow($Process, [string] $Class, [int] $TimeoutMs = 10000) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     while ($clock.ElapsedMilliseconds -lt $TimeoutMs) {
-        $hwnd = [IntPtr]::Zero
-        while ($true) {
-            $hwnd = [JikUi.Native]::FindWindowOfClass([IntPtr]::Zero, $hwnd, $Class, [IntPtr]::Zero)
-            if ($hwnd -eq [IntPtr]::Zero) { break }
-            $owner = [uint32]0
-            [JikUi.Native]::GetWindowThreadProcessId($hwnd, [ref] $owner) | Out-Null
-            if ($owner -eq $Process.Id) { return $hwnd }
-        }
+        $hwnd = Find-JikWindow $Process $Class
+        if ($hwnd -ne [IntPtr]::Zero) { return $hwnd }
         if ($Process.HasExited) { throw "jik exited with code $($Process.ExitCode) before it showed $Class." }
         Start-Sleep -Milliseconds 100
     }

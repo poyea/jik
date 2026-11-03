@@ -15,6 +15,9 @@ use windows::Win32::Graphics::Gdi::{
     DeleteObject,
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
+use windows::Win32::System::RemoteDesktop::{
+    NOTIFY_FOR_THIS_SESSION, WTSRegisterSessionNotification, WTSUnRegisterSessionNotification,
+};
 use windows::Win32::System::Threading::{
     CancelWaitableTimer, CreateWaitableTimerExW, INFINITE, SetWaitableTimer, TIMER_ALL_ACCESS,
 };
@@ -35,6 +38,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, HSTRING, PCSTR, PCWSTR, w};
 
 const CLASS_NAME: PCWSTR = w!("WinkitTray");
+const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
+const WTS_SESSION_UNLOCK: usize = 0x8;
 /// The numbers of the uxtheme.dll exports for dark menus. They have no names.
 const SET_PREFERRED_APP_MODE: u16 = 135;
 const ALLOW_DARK_MODE_FOR_WINDOW: u16 = 133;
@@ -87,6 +92,8 @@ impl MenuItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Wake {
     Deadline,
+    /// The user unlocked the session: someone is at the screen again.
+    SessionUnlocked,
     Command(u32),
     Quit,
 }
@@ -105,6 +112,7 @@ thread_local! {
     static MENU: RefCell<Vec<MenuItem>> = const { RefCell::new(Vec::new()) };
     static ICON_DATA: RefCell<Option<NOTIFYICONDATAW>> = const { RefCell::new(None) };
     static TASKBAR_CREATED: Cell<u32> = const { Cell::new(0) };
+    static UNLOCKED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// An absolute timer fires at the correct clock time after sleep, hibernation, or a clock change.
@@ -180,6 +188,9 @@ impl Tray {
             .context("CreateWindowExW(tray)")?;
             TASKBAR_CREATED.set(RegisterWindowMessageW(w!("TaskbarCreated")));
             allow_dark_menus(hwnd);
+            // Without it, the tray does not know when the user unlocks. Then a held popup waits
+            // for its next check.
+            let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
 
             let icon = match create_icon(icon) {
                 Ok(icon) => icon,
@@ -242,6 +253,9 @@ impl Tray {
             if let Some(id) = COMMANDS.with_borrow_mut(|q| q.pop_front()) {
                 return Ok(Wake::Command(id));
             }
+            if UNLOCKED.replace(false) {
+                return Ok(Wake::SessionUnlocked);
+            }
             if let Some(t) = until {
                 if SystemTime::now() >= t {
                     return Ok(Wake::Deadline);
@@ -269,6 +283,7 @@ impl Drop for Tray {
                 }
             });
             let _ = DestroyIcon(self.icon);
+            let _ = WTSUnRegisterSessionNotification(self.hwnd);
             let _ = DestroyWindow(self.hwnd);
         }
     }
@@ -287,6 +302,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             let event = (lparam.0 & 0xFFFF) as u32;
             if event == WM_LBUTTONUP || event == WM_RBUTTONUP {
                 show_menu(hwnd);
+            }
+            LRESULT(0)
+        }
+        WM_WTSSESSION_CHANGE => {
+            if wparam.0 == WTS_SESSION_UNLOCK {
+                UNLOCKED.set(true);
             }
             LRESULT(0)
         }

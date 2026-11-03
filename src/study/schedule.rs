@@ -17,6 +17,11 @@ pub struct ScheduleConfig {
     /// The jitter as a fraction of the period. For example, 0.2 is plus or minus 20%.
     pub jitter: f64,
     pub min_gap: Duration,
+    /// How long a due question waits before the next check, while a full-screen app or a
+    /// presentation is in front.
+    pub busy_retry: Duration,
+    /// The same while the user is away (locked or screen saver). An unlock ends it sooner.
+    pub away_retry: Duration,
 }
 
 impl Default for ScheduleConfig {
@@ -30,6 +35,8 @@ impl Default for ScheduleConfig {
                 .to_vec(),
             jitter: 0.2,
             min_gap: Duration::from_secs(2 * MIN),
+            busy_retry: Duration::from_secs(MIN),
+            away_retry: Duration::from_secs(5 * MIN),
         }
     }
 }
@@ -39,6 +46,8 @@ impl ScheduleConfig {
         Self {
             periods: self.periods.iter().map(|p| p.div_f64(scale)).collect(),
             min_gap: self.min_gap.div_f64(scale),
+            busy_retry: self.busy_retry.div_f64(scale),
+            away_retry: self.away_retry.div_f64(scale),
             ..self
         }
     }
@@ -266,5 +275,7 @@ mod tests {
         let c = ScheduleConfig::default().scaled(60.0);
         assert_eq!(c.periods[0], Duration::from_secs(10));
         assert_eq!(c.min_gap, Duration::from_secs(2));
+        assert_eq!(c.busy_retry, Duration::from_secs(1));
+        assert_eq!(c.away_retry, Duration::from_secs(5));
     }
 }
