@@ -4,5 +4,5 @@
 mod config;
 mod setting;
 
-pub use config::Position;
-pub use setting::Settings;
+pub use config::{Config, PopupConfig, Position};
+pub use setting::{Settings, save_config, with_line_endings_of};

@@ -38,6 +38,40 @@ fn load_or_create_config(path: &Path) -> Result<Config> {
     toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
 }
 
+/// Change only the values in the file, so that its comments and layout stay.
+pub fn save_config(path: &Path, config: &Config) -> Result<()> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => DEFAULT_CONFIG.to_string(),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
+    let updated = update_config_text(&text, config)
+        .with_context(|| format!("updating {}", path.display()))?;
+    let tmp = path.with_extension("toml.tmp");
+    std::fs::write(&tmp, updated).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))
+}
+
+fn update_config_text(text: &str, config: &Config) -> Result<String> {
+    let mut doc: toml_edit::DocumentMut = text.parse()?;
+    let popup = &config.popup;
+    doc["popup"]["position"] = toml_edit::value(popup.position.key());
+    doc["popup"]["auto_skip_seconds"] = toml_edit::value(i64::from(popup.auto_skip_seconds));
+    let updated = with_line_endings_of(text, &doc.to_string());
+    toml::from_str::<Config>(&updated).context("the updated file is not a valid config")?;
+    Ok(updated)
+}
+
+/// Use the line endings of `original` (CRLF or LF) in `text`, so a save does not change them all.
+pub fn with_line_endings_of(original: &str, text: &str) -> String {
+    let lf = text.replace("\r\n", "\n");
+    if original.contains("\r\n") {
+        lf.replace('\n', "\r\n")
+    } else {
+        lf
+    }
+}
+
 fn time_scale_from_env() -> Result<f64> {
     match std::env::var(TIME_SCALE_VAR) {
         Ok(v) => parse_time_scale(&v),
@@ -64,6 +98,42 @@ mod tests {
     fn default_file_parses_to_defaults() {
         let c: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
         assert_eq!(c.popup.position, Position::BottomRight);
+    }
+
+    #[test]
+    fn update_keeps_comments_and_changes_values() {
+        let mut config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
+        config.popup.position = Position::TopLeft;
+        config.popup.auto_skip_seconds = 0;
+        let updated = update_config_text(DEFAULT_CONFIG, &config).unwrap();
+        for line in DEFAULT_CONFIG.lines().filter(|l| l.starts_with('#')) {
+            assert!(updated.contains(line), "lost comment: {line}");
+        }
+        let parsed: Config = toml::from_str(&updated).unwrap();
+        assert_eq!(parsed.popup.position, Position::TopLeft);
+        assert_eq!(parsed.popup.auto_skip(), None);
+    }
+
+    #[test]
+    fn update_keeps_crlf_line_endings() {
+        let crlf = DEFAULT_CONFIG.replace("\r\n", "\n").replace('\n', "\r\n");
+        let updated = update_config_text(&crlf, &Config::default()).unwrap();
+        assert_eq!(
+            updated.matches('\n').count(),
+            updated.matches("\r\n").count()
+        );
+        let lf = DEFAULT_CONFIG.replace("\r\n", "\n");
+        let updated = update_config_text(&lf, &Config::default()).unwrap();
+        assert!(!updated.contains('\r'));
+    }
+
+    #[test]
+    fn update_adds_missing_values() {
+        let config = Config::default();
+        let updated = update_config_text("# empty\n", &config).unwrap();
+        let parsed: Config = toml::from_str(&updated).unwrap();
+        assert_eq!(parsed.popup.position, Position::BottomRight);
+        assert_eq!(parsed.popup.auto_skip_seconds, 30);
     }
 
     #[test]

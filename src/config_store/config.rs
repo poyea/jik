@@ -47,6 +47,43 @@ pub enum Position {
     BottomRight,
 }
 
+impl Position {
+    pub const ALL: [Position; 7] = [
+        Position::TopLeft,
+        Position::TopCenter,
+        Position::TopRight,
+        Position::Center,
+        Position::BottomLeft,
+        Position::BottomCenter,
+        Position::BottomRight,
+    ];
+
+    /// The value in `config.toml`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Position::TopLeft => "top-left",
+            Position::TopCenter => "top-center",
+            Position::TopRight => "top-right",
+            Position::Center => "center",
+            Position::BottomLeft => "bottom-left",
+            Position::BottomCenter => "bottom-center",
+            Position::BottomRight => "bottom-right",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Position::TopLeft => "Top left",
+            Position::TopCenter => "Top center",
+            Position::TopRight => "Top right",
+            Position::Center => "Center",
+            Position::BottomLeft => "Bottom left",
+            Position::BottomCenter => "Bottom center",
+            Position::BottomRight => "Bottom right",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,6 +115,15 @@ mod tests {
     fn auto_skip_zero_turns_it_off() {
         let c: Config = toml::from_str("[popup]\nauto_skip_seconds = 0").unwrap();
         assert_eq!(c.popup.auto_skip(), None);
+    }
+
+    #[test]
+    fn every_position_key_parses_to_itself() {
+        for position in Position::ALL {
+            let text = format!("[popup]\nposition = \"{}\"", position.key());
+            let c: Config = toml::from_str(&text).unwrap();
+            assert_eq!(c.popup.position, position);
+        }
     }
 
     #[test]

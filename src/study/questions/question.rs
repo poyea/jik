@@ -4,9 +4,11 @@
 use std::collections::HashSet;
 
 use anyhow::{Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+const MAX_ID_LEN: usize = 40;
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Question {
     pub id: String,
     pub text: String,
@@ -48,6 +50,32 @@ impl Question {
         }
         Ok(())
     }
+}
+
+/// Make an id for a new question from its text, for example "what-is-the-capital-of-france".
+/// The id is different from all ids in `taken`.
+pub fn new_id<'a>(text: &str, taken: impl IntoIterator<Item = &'a str>) -> String {
+    let taken: HashSet<&str> = taken.into_iter().collect();
+    let mut base = String::new();
+    for c in text.chars().flat_map(char::to_lowercase) {
+        if c.is_alphanumeric() {
+            base.push(c);
+        } else if !base.is_empty() && !base.ends_with('-') {
+            base.push('-');
+        }
+        if base.chars().count() >= MAX_ID_LEN {
+            break;
+        }
+    }
+    let base = base.trim_end_matches('-');
+    let base = if base.is_empty() { "question" } else { base };
+    if !taken.contains(base) {
+        return base.to_string();
+    }
+    (2..)
+        .map(|n| format!("{base}-{n}"))
+        .find(|id| !taken.contains(id.as_str()))
+        .expect("a free id exists")
 }
 
 pub fn validate_all(questions: &[Question]) -> Result<()> {
@@ -132,5 +160,28 @@ mod tests {
             question("a", &["x", "y"], "y"),
         ];
         assert!(error(&qs).contains("duplicate question id"));
+    }
+
+    #[test]
+    fn new_id_is_made_from_the_text() {
+        assert_eq!(
+            new_id("What is the capital of France?", []),
+            "what-is-the-capital-of-france"
+        );
+        assert_eq!(new_id("  ?!  ", []), "question");
+        assert_eq!(new_id("H2O", []), "h2o");
+    }
+
+    #[test]
+    fn new_id_is_unique() {
+        assert_eq!(new_id("Paris", ["paris"]), "paris-2");
+        assert_eq!(new_id("Paris", ["paris", "paris-2"]), "paris-3");
+    }
+
+    #[test]
+    fn new_id_is_short() {
+        let id = new_id(&"word ".repeat(40), []);
+        assert!(id.chars().count() <= MAX_ID_LEN);
+        assert!(!id.ends_with('-'));
     }
 }

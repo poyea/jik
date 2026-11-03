@@ -4,11 +4,12 @@
 use anyhow::Result;
 use chrono::{DateTime, Local, Utc};
 
+use super::APP_NAME;
 use super::session::{Asked, Session};
+use super::settings::{self, Files, Opened};
+use crate::config_store::Config;
 use crate::ui::popup::Popup;
 use crate::ui::tray::{Command, MenuState, Tray, Wake};
-
-const APP_NAME: &str = "jik";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Pause {
@@ -16,7 +17,7 @@ enum Pause {
     Indefinite,
 }
 
-pub fn run_tray<P: Popup>(mut session: Session<P>) -> Result<()> {
+pub fn run_tray<P: Popup>(mut session: Session<P>, mut config: Config, files: Files) -> Result<()> {
     let mut tray = Tray::new()?;
     let min_gap = chrono::Duration::from_std(session.schedule.config().min_gap)?;
     let mut earliest = Utc::now() + min_gap;
@@ -62,9 +63,37 @@ pub fn run_tray<P: Popup>(mut session: Session<P>) -> Result<()> {
                 false
             }
             Wake::Command(Command::ToggleAutostart) => {
-                match winkit::autostart::set_enabled(APP_NAME, !autostart) {
+                match settings::set_autostart(!autostart) {
                     Ok(()) => autostart = !autostart,
-                    Err(err) => report(&err.context("could not change Start with Windows")),
+                    Err(err) => report(&err),
+                }
+                false
+            }
+            Wake::Command(Command::Settings) => {
+                tray.set_busy(true);
+                winkit::process::set_background(false);
+                let opened = settings::open(&files, &config, autostart, &session.questions);
+                winkit::process::set_background(true);
+                tray.set_busy(false);
+                match opened {
+                    Ok(Opened::Saved(edited)) => {
+                        session.popup.configure(&edited.config.popup);
+                        session.questions = edited.questions;
+                        session.schedule.sync(&session.questions, Utc::now());
+                        if let Err(err) = session.schedule.save() {
+                            report(&err);
+                        }
+                        config = edited.config;
+                        if edited.autostart != autostart {
+                            match settings::set_autostart(edited.autostart) {
+                                Ok(()) => autostart = edited.autostart,
+                                Err(err) => report(&err),
+                            }
+                        }
+                    }
+                    Ok(Opened::Unchanged) => {}
+                    Ok(Opened::Quit) => return Ok(()),
+                    Err(err) => report(&err),
                 }
                 false
             }

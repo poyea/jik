@@ -4,5 +4,5 @@
 mod question;
 mod store;
 
-pub use question::Question;
-pub use store::load_or_create;
+pub use question::{Question, new_id, validate_all};
+pub use store::{load_or_create, save};

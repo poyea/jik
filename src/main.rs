@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
 
-use app::Session;
+use app::{Files, Opened, Session};
 use config_store::Settings;
 use study::answers::AnswerStore;
 use study::questions;
@@ -26,10 +26,11 @@ const ANSWERS_FILE: &str = "answers.jsonl";
 const STATE_FILE: &str = "state.json";
 
 const USAGE: &str = "\
-Usage: jik [--once]
+Usage: jik [--once | --settings]
 
   (no option)  Run in the system tray and ask questions on the Leitner schedule.
   --once       Ask the question due soonest right away, then exit.
+  --settings   Open the settings window, then exit.
   --help       Show this help.
 
 Environment:
@@ -44,10 +45,18 @@ fn main() {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Tray,
+    Once,
+    Settings,
+}
+
 fn run() -> Result<()> {
-    let once = match std::env::args().nth(1).as_deref() {
-        None => false,
-        Some("--once") => true,
+    let mode = match std::env::args().nth(1).as_deref() {
+        None => Mode::Tray,
+        Some("--once") => Mode::Once,
+        Some("--settings") => Mode::Settings,
         Some("--help" | "-h") => {
             println!("{USAGE}");
             return Ok(());
@@ -60,15 +69,29 @@ fn run() -> Result<()> {
     };
 
     let dir = app_dir()?;
-    let settings = Settings::load(&dir.join(CONFIG_FILE))?;
+    let files = Files {
+        config: dir.join(CONFIG_FILE),
+        questions: dir.join(QUESTIONS_FILE),
+    };
+    let settings = Settings::load(&files.config)?;
 
-    let questions_path = dir.join(QUESTIONS_FILE);
-    let questions = questions::load_or_create(&questions_path)?;
+    let questions = questions::load_or_create(&files.questions)?;
     eprintln!(
         "loaded {} questions from {}",
         questions.len(),
-        questions_path.display()
+        files.questions.display()
     );
+
+    if mode == Mode::Settings {
+        let autostart = winkit::autostart::is_enabled(app::APP_NAME);
+        if let Opened::Saved(edited) =
+            app::open_settings(&files, &settings.config, autostart, &questions)?
+            && edited.autostart != autostart
+        {
+            app::set_autostart(edited.autostart)?;
+        }
+        return Ok(());
+    }
 
     let mut schedule = Schedule::load(
         &dir.join(STATE_FILE),
@@ -81,19 +104,16 @@ fn run() -> Result<()> {
         questions,
         schedule,
         store: AnswerStore::new(dir.join(ANSWERS_FILE)),
-        popup: GlassPopup::new(
-            settings.config.popup.position,
-            settings.config.popup.auto_skip(),
-        )?,
+        popup: GlassPopup::new(&settings.config.popup)?,
         rng: fastrand::Rng::new(),
     };
 
-    if once {
+    if mode == Mode::Once {
         let mut session = session;
         session.ask_next()?;
         Ok(())
     } else {
-        app::run_tray(session)
+        app::run_tray(session, settings.config, files)
     }
 }
 

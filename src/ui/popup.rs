@@ -7,7 +7,7 @@ use anyhow::Result;
 use chrono::{DateTime, Local};
 use winkit::popup::{Anchor, ChoicePopup, Response};
 
-use crate::config_store::Position;
+use crate::config_store::{PopupConfig, Position};
 use crate::study::questions::Question;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +27,8 @@ pub struct PopupReply {
 
 pub trait Popup {
     fn ask(&mut self, question: &Question) -> Result<PopupReply>;
+    /// Use new settings from the next popup.
+    fn configure(&mut self, config: &PopupConfig);
 }
 
 pub struct GlassPopup {
@@ -35,15 +37,20 @@ pub struct GlassPopup {
 }
 
 impl GlassPopup {
-    pub fn new(position: Position, auto_skip: Option<Duration>) -> Result<Self> {
+    pub fn new(config: &PopupConfig) -> Result<Self> {
         Ok(Self {
-            popup: ChoicePopup::new(anchor(position))?,
-            auto_skip,
+            popup: ChoicePopup::new(anchor(config.position))?,
+            auto_skip: config.auto_skip(),
         })
     }
 }
 
 impl Popup for GlassPopup {
+    fn configure(&mut self, config: &PopupConfig) {
+        self.popup.set_anchor(anchor(config.position));
+        self.auto_skip = config.auto_skip();
+    }
+
     fn ask(&mut self, question: &Question) -> Result<PopupReply> {
         let reply = self.popup.ask(
             &question.text,

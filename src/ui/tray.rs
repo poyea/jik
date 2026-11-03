@@ -13,6 +13,7 @@ pub enum Command {
     Pause(Option<Duration>),
     Resume,
     ToggleAutostart,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +37,7 @@ const ID_PAUSE_1H: u32 = 3;
 const ID_PAUSE_INDEFINITE: u32 = 4;
 const ID_RESUME: u32 = 5;
 const ID_AUTOSTART: u32 = 6;
+const ID_SETTINGS: u32 = 7;
 
 pub struct Tray {
     inner: tray::Tray,
@@ -81,6 +83,7 @@ fn command(id: u32) -> Option<Command> {
         ID_PAUSE_INDEFINITE => Command::Pause(None),
         ID_RESUME => Command::Resume,
         ID_AUTOSTART => Command::ToggleAutostart,
+        ID_SETTINGS => Command::Settings,
         _ => return None,
     })
 }
@@ -113,6 +116,12 @@ fn menu_items(state: &MenuState) -> Vec<MenuItem> {
             label: "Start with Windows".into(),
             enabled: true,
             checked: state.autostart,
+        },
+        MenuItem::Command {
+            id: ID_SETTINGS,
+            label: "Settings...".into(),
+            enabled: !state.busy,
+            checked: false,
         },
         MenuItem::Separator,
         MenuItem::Quit("Quit".into()),
