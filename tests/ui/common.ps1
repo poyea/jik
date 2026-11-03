@@ -25,6 +25,11 @@ namespace JikUi {
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
         [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
         [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
+        [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+        [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+        [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state);
         [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
         [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
@@ -145,6 +150,25 @@ function Get-JikWindowRect([IntPtr] $Hwnd) {
 function Get-JikWorkArea {
     Add-Type -AssemblyName System.Windows.Forms
     [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+}
+
+# Make a window the foreground window. Windows refuses this to a process that does not own the
+# foreground (as on a CI runner), but not just after a key press, so press and release Alt.
+function Set-JikForeground([IntPtr] $Hwnd) {
+    $alt = 0x12
+    $keyUp = 0x2
+    [JikUi.Native]::keybd_event($alt, 0, 0, [UIntPtr]::Zero)
+    [JikUi.Native]::SetForegroundWindow($Hwnd) | Out-Null
+    [JikUi.Native]::keybd_event($alt, 0, $keyUp, [UIntPtr]::Zero)
+    [JikUi.Native]::BringWindowToTop($Hwnd) | Out-Null
+}
+
+# True while Windows holds its own notifications for a full-screen app (QUNS_BUSY, or
+# QUNS_RUNNING_D3D_FULL_SCREEN).
+function Test-JikFullScreenBusy {
+    $state = 0
+    [JikUi.Native]::SHQueryUserNotificationState([ref] $state) | Out-Null
+    $state -eq 2 -or $state -eq 3
 }
 
 # Save a PNG picture when JIK_UI_SCREENSHOTS names a folder (CI sets it). Without -Hwnd, the

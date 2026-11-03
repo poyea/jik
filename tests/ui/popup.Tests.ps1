@@ -104,7 +104,16 @@ function Test-WaitsWhileFullScreen {
         $screen.Controls.Add($note)
         $screen.Show()
         $screen.Activate()
-        [System.Windows.Forms.Application]::DoEvents()
+        Set-JikForeground $screen.Handle
+
+        # The test means something only if Windows sees the window as a full-screen app.
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        while (-not (Test-JikFullScreenBusy) -and $clock.ElapsedMilliseconds -lt 2000) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 100
+        }
+        $front = [JikUi.Native]::GetForegroundWindow() -eq $screen.Handle
+        Assert-True (Test-JikFullScreenBusy) "Windows sees a full-screen app (test window in front: $front)"
 
         # 60 times faster: the first question is due after 2 seconds, and a held one is
         # checked again each second.
