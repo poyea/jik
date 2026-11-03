@@ -6,6 +6,7 @@
 
 pub mod autostart;
 pub mod dialog;
+pub mod placement;
 pub mod popup;
 pub mod process;
 mod theme;

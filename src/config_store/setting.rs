@@ -5,7 +5,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use super::config::Config;
+use super::config::{Config, Position};
 
 const DEFAULT_CONFIG: &str = include_str!("default.toml");
 const TIME_SCALE_VAR: &str = "JIK_TIME_SCALE";
@@ -55,7 +55,17 @@ pub fn save_config(path: &Path, config: &Config) -> Result<()> {
 fn update_config_text(text: &str, config: &Config) -> Result<String> {
     let mut doc: toml_edit::DocumentMut = text.parse()?;
     let popup = &config.popup;
-    doc["popup"]["position"] = toml_edit::value(popup.position.key());
+    doc["popup"]["position"] = match popup.position {
+        Position::Named(preset) => toml_edit::value(preset.key()),
+        Position::Custom { x, y } => {
+            // f32 to f64 adds digits (0.3 becomes 0.30000001...), so round again.
+            let round = |v: f32| (f64::from(v) * 1000.0).round() / 1000.0;
+            let mut table = toml_edit::InlineTable::new();
+            table.insert("x", round(x).into());
+            table.insert("y", round(y).into());
+            toml_edit::value(table)
+        }
+    };
     doc["popup"]["auto_skip_seconds"] = toml_edit::value(i64::from(popup.auto_skip_seconds));
     let updated = with_line_endings_of(text, &doc.to_string());
     toml::from_str::<Config>(&updated).context("the updated file is not a valid config")?;
@@ -92,25 +102,25 @@ fn parse_time_scale(value: &str) -> Result<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_store::Position;
+    use crate::config_store::Preset;
 
     #[test]
     fn default_file_parses_to_defaults() {
         let c: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
-        assert_eq!(c.popup.position, Position::BottomRight);
+        assert_eq!(c.popup.position, Position::Named(Preset::BottomRight));
     }
 
     #[test]
     fn update_keeps_comments_and_changes_values() {
         let mut config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
-        config.popup.position = Position::TopLeft;
+        config.popup.position = Position::Named(Preset::TopLeft);
         config.popup.auto_skip_seconds = 0;
         let updated = update_config_text(DEFAULT_CONFIG, &config).unwrap();
         for line in DEFAULT_CONFIG.lines().filter(|l| l.starts_with('#')) {
             assert!(updated.contains(line), "lost comment: {line}");
         }
         let parsed: Config = toml::from_str(&updated).unwrap();
-        assert_eq!(parsed.popup.position, Position::TopLeft);
+        assert_eq!(parsed.popup.position, Position::Named(Preset::TopLeft));
         assert_eq!(parsed.popup.auto_skip(), None);
     }
 
@@ -132,7 +142,7 @@ mod tests {
         let config = Config::default();
         let updated = update_config_text("# empty\n", &config).unwrap();
         let parsed: Config = toml::from_str(&updated).unwrap();
-        assert_eq!(parsed.popup.position, Position::BottomRight);
+        assert_eq!(parsed.popup.position, Position::Named(Preset::BottomRight));
         assert_eq!(parsed.popup.auto_skip_seconds, 30);
     }
 
@@ -149,5 +159,18 @@ mod tests {
         assert!(parse_time_scale("NaN").is_err());
         assert!(parse_time_scale("inf").is_err());
         assert!(parse_time_scale("fast").is_err());
+    }
+
+    #[test]
+    fn update_writes_a_custom_position_as_x_and_y() {
+        let mut config = Config::default();
+        config.popup.position = Position::Custom { x: 0.3, y: 0.125 };
+        let updated = update_config_text(DEFAULT_CONFIG, &config).unwrap();
+        assert!(
+            updated.contains("position = { x = 0.3, y = 0.125 }"),
+            "{updated}"
+        );
+        let parsed: Config = toml::from_str(&updated).unwrap();
+        assert_eq!(parsed.popup.position, Position::Custom { x: 0.3, y: 0.125 });
     }
 }

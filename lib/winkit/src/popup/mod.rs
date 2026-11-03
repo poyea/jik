@@ -45,6 +45,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, PCWSTR, w};
 use windows_numerics::Vector2;
 
+use crate::placement::{Placement, SCREEN_MARGIN};
 use crate::theme::Theme;
 use glass::{Graphics, Scene};
 
@@ -61,7 +62,6 @@ const TIMER_FEEDBACK: usize = 3;
 
 const WIDTH: f32 = 360.0;
 const PADDING: f32 = 18.0;
-const MARGIN: f32 = 12.0;
 const TEXT_GAP: f32 = 14.0;
 const BUTTON_MIN_HEIGHT: f32 = 36.0;
 const BUTTON_TEXT_PADDING: f32 = 9.0;
@@ -73,48 +73,6 @@ const DISMISS_TEXT_PADDING: f32 = 12.0;
 const DISMISS_HEIGHT: f32 = 28.0;
 const PROMPT_FONT: f32 = 16.0;
 const BUTTON_FONT: f32 = 14.0;
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Anchor {
-    TopLeft,
-    TopCenter,
-    TopRight,
-    Center,
-    BottomLeft,
-    BottomCenter,
-    #[default]
-    BottomRight,
-}
-
-impl Anchor {
-    /// If the window is larger than the area, its top-left corner stays in the area, so the
-    /// start of the content is visible.
-    pub fn place(
-        self,
-        area: (i32, i32, i32, i32),
-        width: i32,
-        height: i32,
-        margin: i32,
-    ) -> (i32, i32) {
-        let (left, top, right, bottom) = area;
-        let x_start = left + margin;
-        let x_center = left + (right - left - width) / 2;
-        let x_end = right - width - margin;
-        let y_start = top + margin;
-        let y_center = top + (bottom - top - height) / 2;
-        let y_end = bottom - height - margin;
-        let (x, y) = match self {
-            Anchor::TopLeft => (x_start, y_start),
-            Anchor::TopCenter => (x_center, y_start),
-            Anchor::TopRight => (x_end, y_start),
-            Anchor::Center => (x_center, y_center),
-            Anchor::BottomLeft => (x_start, y_end),
-            Anchor::BottomCenter => (x_center, y_end),
-            Anchor::BottomRight => (x_end, y_end),
-        };
-        (x.max(left), y.max(top))
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Response {
@@ -135,7 +93,7 @@ pub struct Reply {
 
 pub struct ChoicePopup {
     hinstance: HINSTANCE,
-    anchor: Anchor,
+    placement: Placement,
     _dispatcher: DispatcherQueueController,
 }
 
@@ -149,12 +107,12 @@ struct Fonts {
 }
 
 impl ChoicePopup {
-    /// The next popup shows at this anchor.
-    pub fn set_anchor(&mut self, anchor: Anchor) {
-        self.anchor = anchor;
+    /// The next popup shows at this place in the work area.
+    pub fn set_placement(&mut self, placement: Placement) {
+        self.placement = placement;
     }
 
-    pub fn new(anchor: Anchor) -> Result<Self> {
+    pub fn new(placement: Placement) -> Result<Self> {
         unsafe {
             let _ = RoInitialize(RO_INIT_SINGLETHREADED);
             let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -174,7 +132,7 @@ impl ChoicePopup {
 
             Ok(Self {
                 hinstance,
-                anchor,
+                placement,
                 _dispatcher: glass::dispatcher_queue()?,
             })
         }
@@ -222,8 +180,8 @@ impl ChoicePopup {
                 SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
             )
             .context("SystemParametersInfoW(SPI_GETWORKAREA)")?;
-            let margin = (MARGIN * scale).round() as i32;
-            let (x, y) = self.anchor.place(
+            let margin = (SCREEN_MARGIN * scale).round() as i32;
+            let (x, y) = self.placement.place(
                 (work.left, work.top, work.right, work.bottom),
                 win_w,
                 win_h,
@@ -745,32 +703,5 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const AREA: (i32, i32, i32, i32) = (0, 0, 1000, 800);
-
-    #[test]
-    fn places_corners_and_center() {
-        assert_eq!(Anchor::TopLeft.place(AREA, 100, 50, 10), (10, 10));
-        assert_eq!(Anchor::BottomRight.place(AREA, 100, 50, 10), (890, 740));
-        assert_eq!(Anchor::Center.place(AREA, 100, 50, 10), (450, 375));
-        assert_eq!(Anchor::BottomCenter.place(AREA, 100, 50, 10), (450, 740));
-    }
-
-    #[test]
-    fn window_taller_than_area_keeps_its_top_visible() {
-        assert_eq!(Anchor::BottomRight.place(AREA, 100, 900, 10), (890, 0));
-        assert_eq!(Anchor::Center.place(AREA, 100, 900, 10), (450, 0));
-        assert_eq!(Anchor::TopLeft.place(AREA, 100, 900, 10), (10, 10));
-    }
-
-    #[test]
-    fn window_wider_than_area_keeps_its_left_visible() {
-        assert_eq!(Anchor::BottomRight.place(AREA, 1200, 50, 10), (0, 740));
     }
 }

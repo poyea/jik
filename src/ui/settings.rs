@@ -4,12 +4,13 @@
 use anyhow::Result;
 use winkit::dialog::{Bounds, Control, ControlId, Dialog, Event, Flow, Outcome};
 
-use crate::config_store::{Config, Position};
+use crate::config_store::{Config, Position, Preset};
 use crate::study::questions::{self, Question};
 
 const TITLE: &str = "jik Settings";
 const MAX_AUTO_SKIP: u32 = 3600;
 const LABEL_LEN: usize = 60;
+const CUSTOM_POSITION: &str = "Custom";
 
 pub struct Edited {
     pub config: Config,
@@ -368,11 +369,11 @@ impl Editor {
             }
         };
         let mut config = self.base.clone();
-        if let Some(position) = d
+        if let Some(preset) = d
             .selected(self.ids.position)
-            .and_then(|i| Position::ALL.get(i).copied())
+            .and_then(|i| Preset::ALL.get(i).copied())
         {
-            config.popup.position = position;
+            config.popup.position = Position::Named(preset);
         }
         config.popup.auto_skip_seconds = auto_skip;
         Some(SettingsOutcome::Saved(Edited {
@@ -386,11 +387,13 @@ impl Editor {
 /// Show the settings window. It returns when the user saves or cancels.
 pub fn edit(config: &Config, autostart: bool, questions: &[Question]) -> Result<SettingsOutcome> {
     let (mut dialog, ids) = build_dialog()?;
-    let labels: Vec<&str> = Position::ALL.iter().map(|p| p.label()).collect();
+    let mut labels: Vec<&str> = Preset::ALL.iter().map(|p| p.label()).collect();
+    labels.push(CUSTOM_POSITION);
     dialog.set_items(ids.position, &labels);
-    let position = Position::ALL
-        .iter()
-        .position(|&p| p == config.popup.position);
+    let position = match config.popup.position {
+        Position::Named(preset) => Preset::ALL.iter().position(|&p| p == preset),
+        Position::Custom { .. } => Some(Preset::ALL.len()),
+    };
     dialog.set_selected(ids.position, position);
     dialog.set_text(ids.auto_skip, &config.popup.auto_skip_seconds.to_string());
     dialog.set_checked(ids.autostart, autostart);

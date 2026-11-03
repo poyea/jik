@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use winkit::popup::{Anchor, ChoicePopup, Response};
+use winkit::placement::Placement;
+use winkit::popup::{ChoicePopup, Response};
 
 use crate::config_store::{PopupConfig, Position};
 use crate::study::questions::Question;
@@ -39,7 +40,7 @@ pub struct GlassPopup {
 impl GlassPopup {
     pub fn new(config: &PopupConfig) -> Result<Self> {
         Ok(Self {
-            popup: ChoicePopup::new(anchor(config.position))?,
+            popup: ChoicePopup::new(placement(config.position))?,
             auto_skip: config.auto_skip(),
         })
     }
@@ -47,7 +48,7 @@ impl GlassPopup {
 
 impl Popup for GlassPopup {
     fn configure(&mut self, config: &PopupConfig) {
-        self.popup.set_anchor(anchor(config.position));
+        self.popup.set_placement(placement(config.position));
         self.auto_skip = config.auto_skip();
     }
 
@@ -72,14 +73,7 @@ impl Popup for GlassPopup {
     }
 }
 
-fn anchor(position: Position) -> Anchor {
-    match position {
-        Position::TopLeft => Anchor::TopLeft,
-        Position::TopCenter => Anchor::TopCenter,
-        Position::TopRight => Anchor::TopRight,
-        Position::Center => Anchor::Center,
-        Position::BottomLeft => Anchor::BottomLeft,
-        Position::BottomCenter => Anchor::BottomCenter,
-        Position::BottomRight => Anchor::BottomRight,
-    }
+pub fn placement(position: Position) -> Placement {
+    let (x, y) = position.fractions();
+    Placement::new(x, y)
 }
