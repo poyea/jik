@@ -56,6 +56,16 @@ impl Position {
             Position::Custom { x, y } => (x, y),
         }
     }
+
+    /// A named place if `(x, y)` is one, else a custom position rounded to 0.001.
+    pub fn from_fractions(x: f32, y: f32) -> Self {
+        let round = |v: f32| (v.clamp(0.0, 1.0) * 1000.0).round() / 1000.0;
+        let (x, y) = (round(x), round(y));
+        Preset::ALL
+            .into_iter()
+            .find(|p| p.fractions() == (x, y))
+            .map_or(Position::Custom { x, y }, Position::Named)
+    }
 }
 
 impl TryFrom<toml::Value> for Position {
@@ -243,6 +253,18 @@ mod tests {
         assert_eq!(Preset::CenterRight.fractions(), (1.0, 0.5));
         assert_eq!(Preset::BottomCenter.fractions(), (0.5, 1.0));
         assert_eq!(Preset::BottomRight.fractions(), (1.0, 1.0));
+    }
+
+    #[test]
+    fn fractions_on_a_preset_give_its_name() {
+        assert_eq!(
+            Position::from_fractions(0.5, 0.0),
+            Position::Named(Preset::TopCenter)
+        );
+        assert_eq!(
+            Position::from_fractions(0.3333, 0.9),
+            Position::Custom { x: 0.333, y: 0.9 }
+        );
     }
 
     #[test]

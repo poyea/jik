@@ -22,6 +22,8 @@ namespace JikUi {
         public static extern IntPtr FindWindowOfClass(IntPtr parent, IntPtr after, string cls, IntPtr name);
         [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
         [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+        [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
         [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
         [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
@@ -124,6 +126,18 @@ function Get-JikClientSize([IntPtr] $Hwnd) {
     $rect = New-Object JikUi.Native+RECT
     [JikUi.Native]::GetClientRect($Hwnd, [ref] $rect) | Out-Null
     @{ Width = $rect.Right; Height = $rect.Bottom }
+}
+
+function Get-JikWindowRect([IntPtr] $Hwnd) {
+    $rect = New-Object JikUi.Native+RECT
+    [JikUi.Native]::GetWindowRect($Hwnd, [ref] $rect) | Out-Null
+    $rect
+}
+
+# The work area of the primary monitor, in pixels.
+function Get-JikWorkArea {
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 }
 
 # A left click at client coordinates, as the mouse sends it.

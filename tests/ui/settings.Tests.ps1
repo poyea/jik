@@ -1,7 +1,7 @@
 # Copyright (c) 2026 John Law
 # SPDX-License-Identifier: MIT
 
-# The settings window: add a question, save, and find it in questions.toml.
+# The settings window: add a question and save it, and place the popup with the picker.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 
@@ -40,5 +40,56 @@ function Test-AddQuestion {
     }
 }
 
+function Test-PlacePopupWithThePicker {
+    $dir = New-JikSandbox
+    $jik = $null
+    try {
+        $jik = Start-Jik $dir @('--settings')
+        $dialog = Wait-JikWindow $jik 'WinkitDialog'
+        Start-Sleep -Milliseconds 300
+
+        # A click on an empty place in the picture brings the center of the popup there.
+        # The popup starts at the bottom right, so the top left of the picture is empty.
+        $picker = (Get-JikChildren $dialog 'WinkitPlacement')[0]
+        $size = Get-JikClientSize $picker
+        $x = [int]($size.Width * 0.3)
+        $y = [int]($size.Height * 0.3)
+        $position = [IntPtr](($y -shl 16) -bor $x)
+        [JikUi.Native]::SendMessageW($picker, $WM_LBUTTONDOWN, [IntPtr]1, $position) | Out-Null
+        [JikUi.Native]::SendMessageW($picker, $WM_LBUTTONUP, [IntPtr]0, $position) | Out-Null
+        [JikUi.Native]::SendMessageW((Get-JikButton $dialog 'Save'), $BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+        Assert-Equal 0 (Wait-JikExit $jik 5000) 'exit code of the settings window'
+
+        $config = Get-Content -Raw (Join-Path $dir 'config.toml')
+        # Only a line that starts with the key: the comment above it has an example position.
+        $saved = [regex]::Match($config, '(?m)^position = \{ x = ([0-9.]+), y = ([0-9.]+) \}')
+        Assert-True $saved.Success 'a custom position is saved'
+        $fx = [double]::Parse($saved.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
+        $fy = [double]::Parse($saved.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
+        Assert-True ($fx -gt 0 -and $fx -lt 0.5 -and $fy -gt 0 -and $fy -lt 0.5) "position ($fx, $fy) is in the top left"
+
+        # The popup shows at the same place on the real screen.
+        $jik = Start-Jik $dir @('--once')
+        $popup = Wait-JikWindow $jik 'WinkitChoicePopup'
+        $rect = Get-JikWindowRect $popup
+        $area = Get-JikWorkArea
+        $margin = [Math]::Round(12 * [JikUi.Native]::GetDpiForWindow($popup) / 96)
+        $width = $rect.Right - $rect.Left
+        $height = $rect.Bottom - $rect.Top
+        $expectedX = $area.Left + $margin + $fx * ($area.Width - 2 * $margin - $width)
+        $expectedY = $area.Top + $margin + $fy * ($area.Height - 2 * $margin - $height)
+        Assert-True ([Math]::Abs($rect.Left - $expectedX) -le 2) "popup left $($rect.Left), expected $expectedX"
+        Assert-True ([Math]::Abs($rect.Top - $expectedY) -le 2) "popup top $($rect.Top), expected $expectedY"
+
+        $client = Get-JikClientSize $popup
+        Send-JikClick $popup ($client.Width - 40) ($client.Height - 35)
+        Assert-Equal 0 (Wait-JikExit $jik 5000) 'exit code of the popup'
+    } finally {
+        Remove-JikSandbox $dir $jik
+    }
+}
+
 Test-AddQuestion
 Write-Host 'PASS settings: a new question is saved'
+Test-PlacePopupWithThePicker
+Write-Host 'PASS settings: the picker places the popup'

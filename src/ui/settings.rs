@@ -6,11 +6,14 @@ use winkit::dialog::{Bounds, Control, ControlId, Dialog, Event, Flow, Outcome};
 
 use crate::config_store::{Config, Position, Preset};
 use crate::study::questions::{self, Question};
+use crate::ui::popup::placement;
 
 const TITLE: &str = "jik Settings";
 const MAX_AUTO_SKIP: u32 = 3600;
 const LABEL_LEN: usize = 60;
 const CUSTOM_POSITION: &str = "Custom";
+/// The popup size that the placement picker shows: a short question with four choices.
+const POPUP_SIZE: (i32, i32) = (360, 300);
 
 pub struct Edited {
     pub config: Config,
@@ -145,6 +148,7 @@ fn build_questions(drafts: &[Draft]) -> Result<Vec<Question>, Invalid> {
 
 struct Ids {
     position: ControlId,
+    place: ControlId,
     auto_skip: ControlId,
     autostart: ControlId,
     list: ControlId,
@@ -158,11 +162,11 @@ struct Ids {
 }
 
 fn build_dialog() -> Result<(Dialog, Ids)> {
-    let mut d = Dialog::new(TITLE, 640, 560)?;
+    let mut d = Dialog::new(TITLE, 720, 620)?;
     let b = Bounds::new;
-    d.add(Control::Group("General"), b(16, 16, 608, 140))?;
+    d.add(Control::Group("General"), b(16, 16, 688, 196))?;
     d.add(Control::Label("Popup position"), b(32, 54, 216, 26))?;
-    let position = d.add(Control::DropDown, b(256, 54, 200, 26))?;
+    let position = d.add(Control::DropDown, b(256, 54, 180, 26))?;
     d.add(
         Control::Label("Auto-skip after (seconds, 0 = off)"),
         b(32, 88, 216, 26),
@@ -175,63 +179,76 @@ fn build_dialog() -> Result<(Dialog, Ids)> {
         b(256, 88, 80, 26),
     )?;
     let autostart = d.add(Control::Check("Start with Windows"), b(32, 122, 300, 26))?;
+    d.add(
+        Control::Label("Drag the popup in the picture to place it anywhere."),
+        b(32, 168, 404, 26),
+    )?;
+    let (window_width, window_height) = POPUP_SIZE;
+    let place = d.add(
+        Control::Placement {
+            window_width,
+            window_height,
+        },
+        b(456, 46, 232, 156),
+    )?;
 
-    d.add(Control::Group("Questions"), b(16, 172, 608, 332))?;
-    let list = d.add(Control::List, b(32, 210, 220, 236))?;
+    d.add(Control::Group("Questions"), b(16, 228, 688, 332))?;
+    let list = d.add(Control::List, b(32, 266, 260, 236))?;
     let add = d.add(
         Control::Button {
             text: "Add",
             default: false,
         },
-        b(32, 458, 104, 30),
+        b(32, 514, 124, 30),
     )?;
     let delete = d.add(
         Control::Button {
             text: "Delete",
             default: false,
         },
-        b(148, 458, 104, 30),
+        b(168, 514, 124, 30),
     )?;
-    d.add(Control::Label("Question"), b(268, 206, 340, 20))?;
+    d.add(Control::Label("Question"), b(308, 262, 380, 20))?;
     let text = d.add(
         Control::Edit {
             multiline: true,
             digits_only: false,
         },
-        b(268, 228, 340, 56),
+        b(308, 284, 380, 56),
     )?;
     d.add(
         Control::Label("Choices (one per line)"),
-        b(268, 292, 340, 20),
+        b(308, 348, 380, 20),
     )?;
     let choices = d.add(
         Control::Edit {
             multiline: true,
             digits_only: false,
         },
-        b(268, 314, 340, 96),
+        b(308, 370, 380, 96),
     )?;
-    d.add(Control::Label("Correct answer"), b(268, 418, 340, 20))?;
-    let answer = d.add(Control::DropDown, b(268, 440, 340, 26))?;
+    d.add(Control::Label("Correct answer"), b(308, 474, 380, 20))?;
+    let answer = d.add(Control::DropDown, b(308, 496, 380, 26))?;
 
     let save = d.add(
         Control::Button {
             text: "Save",
             default: true,
         },
-        b(424, 518, 96, 30),
+        b(504, 574, 96, 30),
     )?;
     let cancel = d.add(
         Control::Button {
             text: "Cancel",
             default: false,
         },
-        b(528, 518, 96, 30),
+        b(608, 574, 96, 30),
     )?;
     Ok((
         d,
         Ids {
             position,
+            place,
             auto_skip,
             autostart,
             list,
@@ -244,6 +261,21 @@ fn build_dialog() -> Result<(Dialog, Ids)> {
             cancel,
         },
     ))
+}
+
+/// The position that the placement picker shows: a named place if it is on one.
+fn picked_position(d: &Dialog, ids: &Ids) -> Position {
+    let p = d.placement(ids.place);
+    Position::from_fractions(p.x(), p.y())
+}
+
+/// Select the named place in the drop-down, or Custom.
+fn show_position(d: &Dialog, ids: &Ids, position: Position) {
+    let index = match position {
+        Position::Named(preset) => Preset::ALL.iter().position(|&p| p == preset),
+        Position::Custom { .. } => None,
+    };
+    d.set_selected(ids.position, Some(index.unwrap_or(Preset::ALL.len())));
 }
 
 struct Editor {
@@ -298,6 +330,15 @@ impl Editor {
     fn handle(&mut self, d: &mut Dialog, event: Event) -> Option<SettingsOutcome> {
         let ids = &self.ids;
         match event {
+            Event::Changed(id) if id == ids.position => {
+                // A named place moves the popup in the picture; Custom leaves it where it is.
+                if let Some(preset) = d.selected(ids.position).and_then(|i| Preset::ALL.get(i)) {
+                    d.set_placement(ids.place, placement(Position::Named(*preset)));
+                }
+            }
+            Event::Changed(id) if id == ids.place => {
+                show_position(d, ids, picked_position(d, ids));
+            }
             Event::Changed(id) if id == ids.list => {
                 let index = d.selected(ids.list);
                 self.select(d, index);
@@ -369,12 +410,7 @@ impl Editor {
             }
         };
         let mut config = self.base.clone();
-        if let Some(preset) = d
-            .selected(self.ids.position)
-            .and_then(|i| Preset::ALL.get(i).copied())
-        {
-            config.popup.position = Position::Named(preset);
-        }
+        config.popup.position = picked_position(d, &self.ids);
         config.popup.auto_skip_seconds = auto_skip;
         Some(SettingsOutcome::Saved(Edited {
             config,
@@ -390,11 +426,8 @@ pub fn edit(config: &Config, autostart: bool, questions: &[Question]) -> Result<
     let mut labels: Vec<&str> = Preset::ALL.iter().map(|p| p.label()).collect();
     labels.push(CUSTOM_POSITION);
     dialog.set_items(ids.position, &labels);
-    let position = match config.popup.position {
-        Position::Named(preset) => Preset::ALL.iter().position(|&p| p == preset),
-        Position::Custom { .. } => Some(Preset::ALL.len()),
-    };
-    dialog.set_selected(ids.position, position);
+    dialog.set_placement(ids.place, placement(config.popup.position));
+    show_position(&dialog, &ids, config.popup.position);
     dialog.set_text(ids.auto_skip, &config.popup.auto_skip_seconds.to_string());
     dialog.set_checked(ids.autostart, autostart);
 
