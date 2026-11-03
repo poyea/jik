@@ -9,7 +9,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result};
 use windows::System::DispatcherQueueController;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, TRUE, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{
     D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
@@ -23,13 +23,11 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_USE_HOSTBACKDROPBRUSH, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
     DWMWCP_DONOTROUND, DWMWINDOWATTRIBUTE, DwmSetWindowAttribute,
 };
-use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::WinRT::{RO_INIT_SINGLETHREADED, RoInitialize};
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::HiDpi::{
-    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, GetDpiForSystem,
-    MDT_EFFECTIVE_DPI, SetProcessDpiAwarenessContext,
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
@@ -140,18 +138,8 @@ pub struct ChoicePopup {
     _dispatcher: DispatcherQueueController,
 }
 
-/// The system DPI stays at its sign-in value. Read the DPI of the monitor at each popup, so a
-/// change of the display scale applies to the next popup.
 fn primary_monitor_scale() -> f32 {
-    unsafe {
-        let monitor = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
-        let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
-        let dpi = match GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) {
-            Ok(()) if dpi_x > 0 => dpi_x,
-            _ => GetDpiForSystem(),
-        };
-        dpi as f32 / 96.0
-    }
+    crate::primary_monitor_dpi() as f32 / 96.0
 }
 
 struct Fonts {
