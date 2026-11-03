@@ -1,8 +1,8 @@
 # Copyright (c) 2026 John Law
 # SPDX-License-Identifier: MIT
 
-# The popup: Skip closes it at once, auto-skip closes it when the countdown ends, and a due
-# question waits while a full-screen window is in front.
+# The popup: Skip closes it at once, an answer shows the result, auto-skip closes it when the
+# countdown ends, and a due question waits while a full-screen window is in front.
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 
@@ -13,6 +13,7 @@ function Test-SkipIsRecorded {
         $jik = Start-Jik $dir @('--once')
         $popup = Wait-JikWindow $jik 'WinkitChoicePopup'
         Start-Sleep -Milliseconds 500
+        Save-JikScreenshot 'popup-1-question' $popup -FromScreen
 
         # Skip is the small button in the bottom-right corner of the popup.
         $size = Get-JikClientSize $popup
@@ -30,6 +31,34 @@ function Test-SkipIsRecorded {
     }
 }
 
+function Test-AnswerShowsTheResult {
+    $dir = New-JikSandbox
+    $jik = $null
+    try {
+        $jik = Start-Jik $dir @('--once')
+        $popup = Wait-JikWindow $jik 'WinkitChoicePopup'
+        Start-Sleep -Milliseconds 500
+
+        # The first question of the sample is on one line, so the first choice (Berlin) starts
+        # after the padding (18), the line (about 21), and the gap (14), and is 36 high.
+        $scale = [JikUi.Native]::GetDpiForWindow($popup) / 96
+        $client = Get-JikClientSize $popup
+        Send-JikClick $popup ([int]($client.Width / 2)) ([int]((18 + 21 + 14 + 18) * $scale))
+        Start-Sleep -Milliseconds 500
+        Save-JikScreenshot 'popup-2-wrong-answer' $popup -FromScreen
+
+        Assert-Equal 0 (Wait-JikExit $jik 5000) 'exit code'
+        $answers = Get-JikAnswers $dir
+        Assert-Equal 1 $answers.Count 'answer records'
+        Assert-Equal 'answered' $answers[0].outcome 'outcome'
+        Assert-Equal 'Berlin' $answers[0].choice 'choice'
+        Assert-Equal $false $answers[0].correct 'correct'
+        Assert-Equal 1 $answers[0].to_box 'box after a wrong answer'
+    } finally {
+        Remove-JikSandbox $dir $jik
+    }
+}
+
 function Test-AutoSkipTimesOut {
     $dir = New-JikSandbox
     $jik = $null
@@ -37,8 +66,10 @@ function Test-AutoSkipTimesOut {
         # A short countdown, so the test does not wait 30 seconds.
         Set-Content -Path (Join-Path $dir 'config.toml') -Value "[popup]`r`nauto_skip_seconds = 2"
         $jik = Start-Jik $dir @('--once')
-        Wait-JikWindow $jik 'WinkitChoicePopup' | Out-Null
+        $popup = Wait-JikWindow $jik 'WinkitChoicePopup'
         $clock = [Diagnostics.Stopwatch]::StartNew()
+        Start-Sleep -Milliseconds 500
+        Save-JikScreenshot 'popup-3-countdown' $popup -FromScreen
 
         Assert-Equal 0 (Wait-JikExit $jik 10000) 'exit code'
         Assert-True ($clock.ElapsedMilliseconds -ge 1500) "closed after $($clock.ElapsedMilliseconds) ms, before the countdown ended"
@@ -88,10 +119,12 @@ function Test-WaitsWhileFullScreen {
             Start-Sleep -Milliseconds 100
         }
 
+        Save-JikScreenshot 'popup-4-held-while-full-screen'
         $screen.Close()
         $screen = $null
         $popup = Wait-JikWindow $jik 'WinkitChoicePopup' 10000
         Start-Sleep -Milliseconds 500
+        Save-JikScreenshot 'popup-5-shown-after-full-screen'
         $client = Get-JikClientSize $popup
         Send-JikClick $popup ($client.Width - 40) ($client.Height - 35)
 
@@ -111,6 +144,8 @@ function Test-WaitsWhileFullScreen {
 
 Test-SkipIsRecorded
 Write-Host 'PASS popup: Skip is recorded'
+Test-AnswerShowsTheResult
+Write-Host 'PASS popup: a wrong answer is recorded and shown'
 Test-AutoSkipTimesOut
 Write-Host 'PASS popup: auto-skip times out'
 # This test covers the whole screen for some seconds. It runs in CI, where no person uses the
