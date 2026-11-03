@@ -157,75 +157,75 @@ struct Ids {
 }
 
 fn build_dialog() -> Result<(Dialog, Ids)> {
-    let mut d = Dialog::new(TITLE, 640, 532)?;
+    let mut d = Dialog::new(TITLE, 640, 560)?;
     let b = Bounds::new;
-    d.add(Control::Group("General"), b(16, 10, 608, 124))?;
-    d.add(Control::Label("Popup position"), b(32, 34, 200, 24))?;
-    let position = d.add(Control::DropDown, b(240, 34, 180, 24))?;
+    d.add(Control::Group("General"), b(16, 16, 608, 140))?;
+    d.add(Control::Label("Popup position"), b(32, 54, 216, 26))?;
+    let position = d.add(Control::DropDown, b(256, 54, 200, 26))?;
     d.add(
         Control::Label("Auto-skip after (seconds, 0 = off)"),
-        b(32, 66, 200, 24),
+        b(32, 88, 216, 26),
     )?;
     let auto_skip = d.add(
         Control::Edit {
             multiline: false,
             digits_only: true,
         },
-        b(240, 66, 80, 24),
+        b(256, 88, 80, 26),
     )?;
-    let autostart = d.add(Control::Check("Start with Windows"), b(32, 98, 300, 24))?;
+    let autostart = d.add(Control::Check("Start with Windows"), b(32, 122, 300, 26))?;
 
-    d.add(Control::Group("Questions"), b(16, 144, 608, 332))?;
-    let list = d.add(Control::List, b(32, 168, 220, 254))?;
+    d.add(Control::Group("Questions"), b(16, 172, 608, 332))?;
+    let list = d.add(Control::List, b(32, 210, 220, 236))?;
     let add = d.add(
         Control::Button {
             text: "Add",
             default: false,
         },
-        b(32, 432, 104, 28),
+        b(32, 458, 104, 30),
     )?;
     let delete = d.add(
         Control::Button {
             text: "Delete",
             default: false,
         },
-        b(148, 432, 104, 28),
+        b(148, 458, 104, 30),
     )?;
-    d.add(Control::Label("Question"), b(268, 164, 340, 20))?;
+    d.add(Control::Label("Question"), b(268, 206, 340, 20))?;
     let text = d.add(
         Control::Edit {
             multiline: true,
             digits_only: false,
         },
-        b(268, 186, 340, 56),
+        b(268, 228, 340, 56),
     )?;
     d.add(
         Control::Label("Choices (one per line)"),
-        b(268, 250, 340, 20),
+        b(268, 292, 340, 20),
     )?;
     let choices = d.add(
         Control::Edit {
             multiline: true,
             digits_only: false,
         },
-        b(268, 272, 340, 106),
+        b(268, 314, 340, 96),
     )?;
-    d.add(Control::Label("Correct answer"), b(268, 386, 340, 20))?;
-    let answer = d.add(Control::DropDown, b(268, 408, 340, 24))?;
+    d.add(Control::Label("Correct answer"), b(268, 418, 340, 20))?;
+    let answer = d.add(Control::DropDown, b(268, 440, 340, 26))?;
 
     let save = d.add(
         Control::Button {
             text: "Save",
             default: true,
         },
-        b(424, 490, 96, 28),
+        b(424, 518, 96, 30),
     )?;
     let cancel = d.add(
         Control::Button {
             text: "Cancel",
             default: false,
         },
-        b(528, 490, 96, 28),
+        b(528, 518, 96, 30),
     )?;
     Ok((
         d,
