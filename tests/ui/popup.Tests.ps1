@@ -57,12 +57,20 @@ function Test-WaitsWhileFullScreen {
     $screen = $null
     $oldScale = $env:JIK_TIME_SCALE
     try {
-        # A window that covers the screen, as a game or a full-screen video does.
+        # A window that covers the screen, as a game or a full-screen video does. It tells
+        # the person at the screen what it is, so a dark screen does not look like a fault.
         $screen = New-Object System.Windows.Forms.Form
         $screen.FormBorderStyle = 'None'
         $screen.WindowState = 'Maximized'
         $screen.TopMost = $true
-        $screen.BackColor = [System.Drawing.Color]::Black
+        $screen.BackColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
+        $note = New-Object System.Windows.Forms.Label
+        $note.Text = 'jik UI test: this full-screen window closes by itself in a few seconds.'
+        $note.ForeColor = [System.Drawing.Color]::White
+        $note.Font = New-Object System.Drawing.Font('Segoe UI', 20)
+        $note.Dock = 'Fill'
+        $note.TextAlign = 'MiddleCenter'
+        $screen.Controls.Add($note)
         $screen.Show()
         $screen.Activate()
         [System.Windows.Forms.Application]::DoEvents()
