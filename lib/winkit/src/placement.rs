@@ -49,11 +49,8 @@ impl Placement {
         height: i32,
         margin: i32,
     ) -> (i32, i32) {
-        let (left, top, right, bottom) = area;
-        (
-            along(left, right, width, margin, self.x),
-            along(top, bottom, height, margin, self.y),
-        )
+        let (x, y) = self.place_exact(Area::from(area), width as f32, height as f32, margin as f32);
+        (x.round() as i32, y.round() as i32)
     }
 
     /// The placement that puts the top-left corner of a window of this size at `(x, y)`.
@@ -64,25 +61,74 @@ impl Placement {
         margin: i32,
         (x, y): (i32, i32),
     ) -> Self {
-        let (left, top, right, bottom) = area;
+        Self::at_exact(
+            Area::from(area),
+            width as f32,
+            height as f32,
+            margin as f32,
+            (x as f32, y as f32),
+        )
+    }
+
+    /// [`Placement::place`] without rounding, for a drawing of the area at a smaller scale.
+    pub(crate) fn place_exact(
+        self,
+        area: Area,
+        width: f32,
+        height: f32,
+        margin: f32,
+    ) -> (f32, f32) {
+        (
+            along(area.left, area.right, width, margin, self.x),
+            along(area.top, area.bottom, height, margin, self.y),
+        )
+    }
+
+    /// [`Placement::at`] without rounding, for a drawing of the area at a smaller scale.
+    pub(crate) fn at_exact(
+        area: Area,
+        width: f32,
+        height: f32,
+        margin: f32,
+        (x, y): (f32, f32),
+    ) -> Self {
         Self::new(
-            fraction_at(left, right, width, margin, x),
-            fraction_at(top, bottom, height, margin, y),
+            fraction_at(area.left, area.right, width, margin, x),
+            fraction_at(area.top, area.bottom, height, margin, y),
         )
     }
 }
 
-fn along(start: i32, end: i32, size: i32, margin: i32, fraction: f32) -> i32 {
-    let free = (end - start - 2 * margin - size) as f32;
-    (start + margin + (fraction * free).round() as i32).max(start)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Area {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
 }
 
-fn fraction_at(start: i32, end: i32, size: i32, margin: i32, position: i32) -> f32 {
-    let free = end - start - 2 * margin - size;
-    if free <= 0 {
+impl From<(i32, i32, i32, i32)> for Area {
+    fn from((left, top, right, bottom): (i32, i32, i32, i32)) -> Self {
+        Self {
+            left: left as f32,
+            top: top as f32,
+            right: right as f32,
+            bottom: bottom as f32,
+        }
+    }
+}
+
+fn along(start: f32, end: f32, size: f32, margin: f32, fraction: f32) -> f32 {
+    let free = end - start - 2.0 * margin - size;
+    (start + margin + fraction * free).max(start)
+}
+
+fn fraction_at(start: f32, end: f32, size: f32, margin: f32, position: f32) -> f32 {
+    let free = end - start - 2.0 * margin - size;
+    if free <= 0.0 {
         return 0.5;
     }
-    (position - start - margin) as f32 / free as f32
+    (position - start - margin) / free
 }
 
 #[cfg(test)]
