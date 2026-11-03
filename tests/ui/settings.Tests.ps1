@@ -12,6 +12,7 @@ function Test-AddQuestion {
         $jik = Start-Jik $dir @('--settings')
         $dialog = Wait-JikWindow $jik 'WinkitDialog'
         Start-Sleep -Milliseconds 300
+        Save-JikScreenshot 'settings-1-open' $dialog
 
         # The edit boxes in order: auto-skip, question, choices.
         # The drop-downs in order: popup position, correct answer.
@@ -24,6 +25,8 @@ function Test-AddQuestion {
         Send-JikText $edits[1] 'What is 2 + 2?'
         Send-JikText $edits[2] "3`r`n4`r`n5"
         Select-JikItem $dialog $dropDowns[1] 1
+        Start-Sleep -Milliseconds 200
+        Save-JikScreenshot 'settings-2-new-question' $dialog
         [JikUi.Native]::SendMessageW((Get-JikButton $dialog 'Save'), $BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
 
         Assert-Equal 0 (Wait-JikExit $jik 5000) 'exit code'
@@ -57,6 +60,8 @@ function Test-PlacePopupWithThePicker {
         $position = [IntPtr](($y -shl 16) -bor $x)
         [JikUi.Native]::SendMessageW($picker, $WM_LBUTTONDOWN, [IntPtr]1, $position) | Out-Null
         [JikUi.Native]::SendMessageW($picker, $WM_LBUTTONUP, [IntPtr]0, $position) | Out-Null
+        Start-Sleep -Milliseconds 200
+        Save-JikScreenshot 'settings-3-popup-placed' $dialog
         [JikUi.Native]::SendMessageW((Get-JikButton $dialog 'Save'), $BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
         Assert-Equal 0 (Wait-JikExit $jik 5000) 'exit code of the settings window'
 
@@ -71,6 +76,8 @@ function Test-PlacePopupWithThePicker {
         # The popup shows at the same place on the real screen.
         $jik = Start-Jik $dir @('--once')
         $popup = Wait-JikWindow $jik 'WinkitChoicePopup'
+        Start-Sleep -Milliseconds 500
+        Save-JikScreenshot 'settings-4-popup-at-the-place'
         $rect = Get-JikWindowRect $popup
         $area = Get-JikWorkArea
         $margin = [Math]::Round(12 * [JikUi.Native]::GetDpiForWindow($popup) / 96)
