@@ -166,9 +166,16 @@ function Set-JikForeground([IntPtr] $Hwnd) {
 # True while Windows holds its own notifications for a full-screen app (QUNS_BUSY, or
 # QUNS_RUNNING_D3D_FULL_SCREEN).
 function Test-JikFullScreenBusy {
+    $state = Get-JikNotificationState
+    $state -eq 2 -or $state -eq 3
+}
+
+# The value of SHQueryUserNotificationState: 1 away, 2 busy, 3 full-screen Direct3D,
+# 4 presentation, 5 accepts notifications, 6 quiet time (a new user session), 7 app.
+function Get-JikNotificationState {
     $state = 0
     [JikUi.Native]::SHQueryUserNotificationState([ref] $state) | Out-Null
-    $state -eq 2 -or $state -eq 3
+    $state
 }
 
 # Save a PNG picture when JIK_UI_SCREENSHOTS names a folder (CI sets it). Without -Hwnd, the

@@ -112,8 +112,12 @@ function Test-WaitsWhileFullScreen {
             [System.Windows.Forms.Application]::DoEvents()
             Start-Sleep -Milliseconds 100
         }
-        $front = [JikUi.Native]::GetForegroundWindow() -eq $screen.Handle
-        Assert-True (Test-JikFullScreenBusy) "Windows sees a full-screen app (test window in front: $front)"
+        if (-not (Test-JikFullScreenBusy)) {
+            $front = [JikUi.Native]::GetForegroundWindow() -eq $screen.Handle
+            $state = Get-JikNotificationState
+            $script:FullScreenSkipped = "Windows does not see a full-screen app here (notification state $state, test window in front: $front)"
+            return
+        }
 
         # 60 times faster: the first question is due after 2 seconds, and a held one is
         # checked again each second.
@@ -160,8 +164,18 @@ Write-Host 'PASS popup: auto-skip times out'
 # This test covers the whole screen for some seconds. It runs in CI, where no person uses the
 # screen, and on a local computer only when JIK_UI_FULLSCREEN is 1.
 if ($env:CI -eq 'true' -or $env:JIK_UI_FULLSCREEN -eq '1') {
+    # Some computers cannot make Windows see a full-screen app (for example a new CI session in
+    # its quiet time). Then the test cannot check jik, so it is skipped, with the reason.
+    $script:FullScreenSkipped = $null
     Test-WaitsWhileFullScreen
-    Write-Host 'PASS popup: a due question waits while a full-screen window is in front'
+    if ($script:FullScreenSkipped) {
+        Write-Host "SKIP popup: full-screen test: $script:FullScreenSkipped"
+        if ($env:GITHUB_ACTIONS -eq 'true') {
+            Write-Host "::warning title=Full-screen UI test skipped::$script:FullScreenSkipped"
+        }
+    } else {
+        Write-Host 'PASS popup: a due question waits while a full-screen window is in front'
+    }
 } else {
     Write-Host 'SKIP popup: full-screen test (it covers the screen; set JIK_UI_FULLSCREEN=1 to run it)'
 }
