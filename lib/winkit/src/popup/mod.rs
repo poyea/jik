@@ -5,7 +5,7 @@ mod glass;
 
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result};
 use windows::System::DispatcherQueueController;
@@ -54,8 +54,11 @@ const FADE_DURATION: Duration = Duration::from_millis(300);
 /// The window closes this long after the fade-out starts. The extra time lets the last frame show.
 const FADE_OUT_CLOSE: Duration = Duration::from_millis(350);
 const COUNTDOWN_TICK: Duration = Duration::from_millis(200);
+/// How long the popup shows the result of a choice before it fades out.
+const FEEDBACK_HOLD: Duration = Duration::from_millis(1500);
 const TIMER_COUNTDOWN: usize = 1;
 const TIMER_FADE_OUT: usize = 2;
+const TIMER_FEEDBACK: usize = 3;
 
 const WIDTH: f32 = 360.0;
 const PADDING: f32 = 18.0;
@@ -124,6 +127,13 @@ pub enum Response {
     Quit,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reply {
+    pub response: Response,
+    /// The time of the click or of the timeout, not the time the popup closed.
+    pub at: SystemTime,
+}
+
 pub struct ChoicePopup {
     hinstance: HINSTANCE,
     anchor: Anchor,
@@ -178,14 +188,18 @@ impl ChoicePopup {
 
     /// With `auto_dismiss`, the dismiss button counts down the seconds. The count stops while the
     /// pointer is on the popup. At zero, the popup fades out and gives [`Response::TimedOut`].
-    /// A click closes the popup immediately.
+    ///
+    /// With `correct`, a click on a choice shows the result: the correct choice becomes green,
+    /// and a wrong selected choice becomes red. The popup then fades out. Without `correct`, and
+    /// for the dismiss button, a click closes the popup immediately.
     pub fn ask<S: AsRef<str>>(
         &mut self,
         prompt: &str,
         choices: &[S],
+        correct: Option<usize>,
         dismiss: &str,
         auto_dismiss: Option<Duration>,
-    ) -> Result<Response> {
+    ) -> Result<Reply> {
         let scale = primary_monitor_scale();
         let gfx = Graphics::new()?;
         let fonts = Fonts {
@@ -271,7 +285,11 @@ impl ChoicePopup {
                 pointer_inside: Cell::new(false),
                 dismiss: dismiss.to_string(),
                 countdown: RefCell::new(countdown),
+                correct: correct.filter(|&c| c < choices.len()),
+                selected: Cell::new(None),
                 closing: Cell::new(false),
+                pending: Cell::new(None),
+                decided_at: Cell::new(None),
                 response: Cell::new(None),
             }));
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize);
@@ -328,9 +346,13 @@ impl ChoicePopup {
                 PostQuitMessage(code);
             }
             shown?;
-            Ok(match quit {
+            let response = match quit {
                 Some(_) => Response::Quit,
                 None => state.response.get().unwrap_or(Response::Dismissed),
+            };
+            Ok(Reply {
+                response,
+                at: state.decided_at.get().unwrap_or_else(SystemTime::now),
             })
         }
     }
@@ -442,7 +464,13 @@ struct WindowState {
     pointer_inside: Cell<bool>,
     dismiss: String,
     countdown: RefCell<Option<Countdown>>,
+    correct: Option<usize>,
+    selected: Cell<Option<usize>>,
+    /// True from the start of the feedback or the fade-out. Then the popup ignores the mouse.
     closing: Cell<bool>,
+    /// The response to give when the fade-out is complete.
+    pending: Cell<Option<Response>>,
+    decided_at: Cell<Option<SystemTime>>,
     response: Cell<Option<Response>>,
 }
 
@@ -470,7 +498,10 @@ impl WindowState {
             }
         };
         match seconds {
-            None => self.fade_out(hwnd),
+            None => {
+                self.decide();
+                self.fade_out(hwnd, Response::TimedOut);
+            }
             Some(seconds) => {
                 let label = countdown_label(&self.dismiss, seconds);
                 if let Some(b) = self.layout.borrow_mut().buttons.last_mut() {
@@ -481,7 +512,14 @@ impl WindowState {
         }
     }
 
-    fn fade_out(&self, hwnd: HWND) {
+    fn decide(&self) {
+        if self.decided_at.get().is_none() {
+            self.decided_at.set(Some(SystemTime::now()));
+        }
+    }
+
+    /// Stop the countdown and ignore the mouse from now on.
+    fn close_input(&self, hwnd: HWND) {
         self.countdown.replace(None);
         self.closing.set(true);
         self.hover.set(None);
@@ -490,6 +528,30 @@ impl WindowState {
             if self.pressed.take().is_some() {
                 let _ = ReleaseCapture();
             }
+        }
+    }
+
+    fn show_feedback(&self, hwnd: HWND, selected: usize) {
+        self.close_input(hwnd);
+        self.selected.set(Some(selected));
+        self.redraw();
+        let held = unsafe {
+            SetTimer(
+                Some(hwnd),
+                TIMER_FEEDBACK,
+                FEEDBACK_HOLD.as_millis() as u32,
+                None,
+            ) != 0
+        };
+        if !held {
+            self.fade_out(hwnd, Response::Choice(selected));
+        }
+    }
+
+    fn fade_out(&self, hwnd: HWND, response: Response) {
+        self.close_input(hwnd);
+        self.pending.set(Some(response));
+        unsafe {
             let started = match self.scene.fade(1.0, 0.0, FADE_DURATION) {
                 Ok(()) => {
                     SetTimer(
@@ -505,7 +567,7 @@ impl WindowState {
                 }
             };
             if !started {
-                self.response.set(Some(Response::TimedOut));
+                self.response.set(Some(response));
             }
         }
     }
@@ -522,6 +584,7 @@ impl WindowState {
         let t = &self.theme;
         let l = &*self.layout.borrow();
         let (hover, pressed) = (self.hover.get(), self.pressed.get());
+        let result = self.selected.get().zip(self.correct);
         self.scene.draw(|dc: &ID2D1DeviceContext| unsafe {
             dc.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
             let frame = D2D1_ROUNDED_RECT {
@@ -542,12 +605,12 @@ impl WindowState {
 
             let border = dc.CreateSolidColorBrush(&t.button_border, None)?;
             for (i, b) in l.buttons.iter().enumerate() {
-                let fill = if pressed == Some(i) && hover == Some(i) {
-                    t.button_pressed
-                } else if hover == Some(i) {
-                    t.button_hover
-                } else {
-                    t.button
+                let fill = match result {
+                    Some((_, correct)) if i == correct => t.correct,
+                    Some((selected, _)) if i == selected => t.wrong,
+                    _ if pressed == Some(i) && hover == Some(i) => t.button_pressed,
+                    _ if hover == Some(i) => t.button_hover,
+                    _ => t.button,
                 };
                 let fill = dc.CreateSolidColorBrush(&fill, None)?;
                 let shape = D2D1_ROUNDED_RECT {
@@ -600,7 +663,13 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             WM_TIMER => {
                 match wparam.0 {
                     TIMER_COUNTDOWN => state.tick(hwnd),
-                    TIMER_FADE_OUT => state.response.set(Some(Response::TimedOut)),
+                    TIMER_FEEDBACK => {
+                        let _ = KillTimer(Some(hwnd), TIMER_FEEDBACK);
+                        if let Some(selected) = state.selected.get() {
+                            state.fade_out(hwnd, Response::Choice(selected));
+                        }
+                    }
+                    TIMER_FADE_OUT => state.response.set(state.pending.get()),
                     _ => {}
                 }
                 LRESULT(0)
@@ -650,8 +719,14 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 let hit = state.hit(lparam);
                 match pressed {
                     Some(i) if hit == Some(i) => {
+                        state.decide();
                         let response = state.layout.borrow().buttons[i].response;
-                        state.response.set(Some(response));
+                        match response {
+                            Response::Choice(choice) if state.correct.is_some() => {
+                                state.show_feedback(hwnd, choice);
+                            }
+                            _ => state.response.set(Some(response)),
+                        }
                     }
                     Some(_) => {
                         state.hover.set(hit);

@@ -49,6 +49,8 @@ pub struct Theme {
     pub button_pressed: D2D1_COLOR_F,
     pub button_border: D2D1_COLOR_F,
     pub window_border: D2D1_COLOR_F,
+    pub correct: D2D1_COLOR_F,
+    pub wrong: D2D1_COLOR_F,
     pub dark: bool,
 }
 
@@ -70,6 +72,8 @@ impl Theme {
         button_pressed: rgba(1.0, 1.0, 1.0, 0.3),
         button_border: rgba(0.0, 0.0, 0.0, 0.08),
         window_border: rgba(0.0, 0.0, 0.0, 0.12),
+        correct: rgba(0.30, 0.78, 0.42, 0.85),
+        wrong: rgba(0.94, 0.40, 0.40, 0.85),
         dark: false,
     };
 
@@ -86,6 +90,8 @@ impl Theme {
         button_pressed: rgba(1.0, 1.0, 1.0, 0.04),
         button_border: rgba(1.0, 1.0, 1.0, 0.1),
         window_border: rgba(1.0, 1.0, 1.0, 0.12),
+        correct: rgba(0.13, 0.55, 0.27, 0.85),
+        wrong: rgba(0.72, 0.18, 0.18, 0.85),
         dark: true,
     };
 

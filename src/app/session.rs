@@ -35,7 +35,8 @@ impl<P: Popup> Session<P> {
             .expect("schedule is synced with the questions");
 
         let shown_at = Local::now();
-        let (choice, outcome) = match self.popup.ask(question)? {
+        let reply = self.popup.ask(question)?;
+        let (choice, outcome) = match reply.result {
             PopupResult::Quit => return Ok(Asked::Quit),
             PopupResult::Skipped => (None, Outcome::Skipped),
             PopupResult::TimedOut => (None, Outcome::TimedOut),
@@ -43,7 +44,7 @@ impl<P: Popup> Session<P> {
         };
 
         let correct = choice.map(|c| c == question.correct_index());
-        let now = Utc::now();
+        let now = reply.at.with_timezone(&Utc);
         let moved = match correct {
             Some(correct) => self
                 .schedule
@@ -54,7 +55,7 @@ impl<P: Popup> Session<P> {
         self.schedule.save()?;
         self.store.append(&AnswerRecord {
             shown_at,
-            answered_at: Local::now(),
+            answered_at: reply.at,
             question_id: question.id.clone(),
             question: question.text.clone(),
             choice: choice.map(|c| question.choices[c].clone()),

@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
+use chrono::{DateTime, Local};
 use winkit::popup::{Anchor, ChoicePopup, Response};
 
 use crate::config_store::Position;
@@ -17,8 +18,15 @@ pub enum PopupResult {
     Quit,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PopupReply {
+    pub result: PopupResult,
+    /// The time of the click or of the timeout.
+    pub at: DateTime<Local>,
+}
+
 pub trait Popup {
-    fn ask(&mut self, question: &Question) -> Result<PopupResult>;
+    fn ask(&mut self, question: &Question) -> Result<PopupReply>;
 }
 
 pub struct GlassPopup {
@@ -36,15 +44,23 @@ impl GlassPopup {
 }
 
 impl Popup for GlassPopup {
-    fn ask(&mut self, question: &Question) -> Result<PopupResult> {
-        let response = self
-            .popup
-            .ask(&question.text, &question.choices, "Skip", self.auto_skip)?;
-        Ok(match response {
+    fn ask(&mut self, question: &Question) -> Result<PopupReply> {
+        let reply = self.popup.ask(
+            &question.text,
+            &question.choices,
+            Some(question.correct_index()),
+            "Skip",
+            self.auto_skip,
+        )?;
+        let result = match reply.response {
             Response::Choice(i) => PopupResult::Answered(i),
             Response::Dismissed => PopupResult::Skipped,
             Response::TimedOut => PopupResult::TimedOut,
             Response::Quit => PopupResult::Quit,
+        };
+        Ok(PopupReply {
+            result,
+            at: reply.at.into(),
         })
     }
 }
