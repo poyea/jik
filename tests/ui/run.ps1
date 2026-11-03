@@ -5,7 +5,7 @@
 # on an unlocked desktop, and quit jik first. Do not use the mouse while they run: a click
 # answers a popup, and the pointer on a popup stops its countdown.
 # One test covers the whole screen with a dark window for about 6 seconds, as a full-screen
-# game does. The window says so, and it closes by itself.
+# game does. It runs only in CI, or when JIK_UI_FULLSCREEN is 1.
 #
 #   powershell -ExecutionPolicy Bypass -File tests\ui\run.ps1
 

@@ -113,5 +113,11 @@ Test-SkipIsRecorded
 Write-Host 'PASS popup: Skip is recorded'
 Test-AutoSkipTimesOut
 Write-Host 'PASS popup: auto-skip times out'
-Test-WaitsWhileFullScreen
-Write-Host 'PASS popup: a due question waits while a full-screen window is in front'
+# This test covers the whole screen for some seconds. It runs in CI, where no person uses the
+# screen, and on a local computer only when JIK_UI_FULLSCREEN is 1.
+if ($env:CI -eq 'true' -or $env:JIK_UI_FULLSCREEN -eq '1') {
+    Test-WaitsWhileFullScreen
+    Write-Host 'PASS popup: a due question waits while a full-screen window is in front'
+} else {
+    Write-Host 'SKIP popup: full-screen test (it covers the screen; set JIK_UI_FULLSCREEN=1 to run it)'
+}
