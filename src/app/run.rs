@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Local, Utc};
-use winkit::presence::{self, Busy};
+use traykit::presence::{self, Busy};
 
 use super::APP_NAME;
 use super::session::{Asked, Session};
@@ -26,8 +26,8 @@ pub fn run_tray<P: Popup>(mut session: Session<P>, mut config: Config, files: Fi
     let mut pause: Option<Pause> = None;
     // A due question that waits because the user cannot see it now: why, and the next check.
     let mut held: Option<(Busy, DateTime<Utc>)> = None;
-    let mut autostart = winkit::autostart::is_enabled(APP_NAME);
-    winkit::process::set_background(true);
+    let mut autostart = traykit::autostart::is_enabled(APP_NAME);
+    traykit::process::set_background(true);
 
     loop {
         let now = Utc::now();
@@ -94,9 +94,9 @@ pub fn run_tray<P: Popup>(mut session: Session<P>, mut config: Config, files: Fi
             }
             Wake::Command(Command::Settings) => {
                 tray.set_busy(true);
-                winkit::process::set_background(false);
+                traykit::process::set_background(false);
                 let opened = settings::open(&files, &config, autostart, &session.questions);
-                winkit::process::set_background(true);
+                traykit::process::set_background(true);
                 tray.set_busy(false);
                 match opened {
                     Ok(Opened::Saved(edited)) => {
@@ -124,9 +124,9 @@ pub fn run_tray<P: Popup>(mut session: Session<P>, mut config: Config, files: Fi
 
         if ask_now {
             tray.set_busy(true);
-            winkit::process::set_background(false);
+            traykit::process::set_background(false);
             let asked = session.ask_next();
-            winkit::process::set_background(true);
+            traykit::process::set_background(true);
             tray.set_busy(false);
             match asked {
                 Ok(Asked::Quit) => return Ok(()),
@@ -153,7 +153,7 @@ fn retry(busy: Busy, config: &ScheduleConfig) -> chrono::Duration {
 fn report(err: &anyhow::Error) {
     let message = format!("{err:#}");
     eprintln!("error: {message}");
-    winkit::show_error(APP_NAME, &message);
+    traykit::show_error(APP_NAME, &message);
 }
 
 fn status_text(

@@ -1,9 +1,9 @@
 [package]
-name = "winkit"
+name = "traykit"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description = "Small Windows API layer for jik: glass popup, tray, autostart."
+description = "Building blocks for small Windows tray apps: tray icon and menu, glass popup, dialogs, autostart."
 include = ["src/**/*"]
 license-file.workspace = true
 repository.workspace = true

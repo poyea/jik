@@ -10,7 +10,7 @@ function Test-AddQuestion {
     $jik = $null
     try {
         $jik = Start-Jik $dir @('--settings')
-        $dialog = Wait-JikWindow $jik 'WinkitDialog'
+        $dialog = Wait-JikWindow $jik 'TraykitDialog'
         Start-Sleep -Milliseconds 300
         Save-JikScreenshot 'settings-1-open' $dialog
 
@@ -48,12 +48,12 @@ function Test-PlacePopupWithThePicker {
     $jik = $null
     try {
         $jik = Start-Jik $dir @('--settings')
-        $dialog = Wait-JikWindow $jik 'WinkitDialog'
+        $dialog = Wait-JikWindow $jik 'TraykitDialog'
         Start-Sleep -Milliseconds 300
 
         # A click on an empty place in the picture brings the center of the popup there.
         # The popup starts at the bottom right, so the top left of the picture is empty.
-        $picker = (Get-JikChildren $dialog 'WinkitPlacement')[0]
+        $picker = (Get-JikChildren $dialog 'TraykitPlacement')[0]
         $size = Get-JikClientSize $picker
         $x = [int]($size.Width * 0.3)
         $y = [int]($size.Height * 0.3)
@@ -75,7 +75,7 @@ function Test-PlacePopupWithThePicker {
 
         # The popup shows at the same place on the real screen.
         $jik = Start-Jik $dir @('--once')
-        $popup = Wait-JikWindow $jik 'WinkitChoicePopup'
+        $popup = Wait-JikWindow $jik 'TraykitChoicePopup'
         Start-Sleep -Milliseconds 500
         Save-JikScreenshot 'settings-4-popup-at-the-place'
         $rect = Get-JikWindowRect $popup

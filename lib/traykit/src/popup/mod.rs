@@ -49,7 +49,7 @@ use crate::placement::{Placement, SCREEN_MARGIN};
 use crate::theme::Theme;
 use glass::{Graphics, Scene};
 
-const CLASS_NAME: PCWSTR = w!("WinkitChoicePopup");
+const CLASS_NAME: PCWSTR = w!("TraykitChoicePopup");
 const FADE_DURATION: Duration = Duration::from_millis(300);
 /// The window closes this long after the fade-out starts. The extra time lets the last frame show.
 const FADE_OUT_CLOSE: Duration = Duration::from_millis(350);

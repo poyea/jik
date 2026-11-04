@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! A small modal window built from standard Windows controls, in the same colors as the popup.
-//! The app places the controls and handles the events. `winkit` knows nothing about the content.
+//! The app places the controls and handles the events. `traykit` knows nothing about the content.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -74,8 +74,8 @@ use windows_numerics::Vector2;
 use crate::placement::{Area, Placement, SCREEN_MARGIN};
 use crate::theme::{Theme, colorref, over, rgba};
 
-const CLASS_NAME: PCWSTR = w!("WinkitDialog");
-const PLACEMENT_CLASS: PCWSTR = w!("WinkitPlacement");
+const CLASS_NAME: PCWSTR = w!("TraykitDialog");
+const PLACEMENT_CLASS: PCWSTR = w!("TraykitPlacement");
 const FIRST_ID: usize = 100;
 const ID_OK: usize = 1;
 const ID_CANCEL: usize = 2;

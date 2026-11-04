@@ -40,5 +40,6 @@ pub fn open(
 }
 
 pub fn set_autostart(enabled: bool) -> Result<()> {
-    winkit::autostart::set_enabled(APP_NAME, enabled).context("could not change Start with Windows")
+    traykit::autostart::set_enabled(APP_NAME, enabled)
+        .context("could not change Start with Windows")
 }

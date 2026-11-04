@@ -1,5 +1,5 @@
 [workspace]
-members = ["lib/winkit"]
+members = ["lib/traykit"]
 
 [workspace.package]
 version = "0.1.0"
@@ -33,7 +33,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"
 toml_edit = "0.25"
-winkit = { path = "lib/winkit" }
+traykit = { path = "lib/traykit" }
 
 [build-dependencies]
 embed-manifest = "1.5"

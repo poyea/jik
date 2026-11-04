@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use winkit::placement::Placement;
-use winkit::popup::{ChoicePopup, Response};
+use traykit::placement::Placement;
+use traykit::popup::{ChoicePopup, Response};
 
 use crate::config_store::{PopupConfig, Position};
 use crate::study::questions::Question;

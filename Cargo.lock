@@ -169,7 +169,7 @@ dependencies = [
  "serde_json",
  "toml",
  "toml_edit",
- "winkit",
+ "traykit",
 ]
 
 [[package]]
@@ -379,6 +379,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
+name = "traykit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "windows",
+ "windows-numerics",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -536,15 +545,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3949bd5b99cafdf1c7ca86b43ca564028dfe27d66958f2470940f73d86d75b37"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "winkit"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "windows",
- "windows-numerics",
 ]
 
 [[package]]

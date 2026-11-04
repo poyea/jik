@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Result;
-use winkit::dialog::{Bounds, Control, ControlId, Dialog, Event, Flow, Outcome};
+use traykit::dialog::{Bounds, Control, ControlId, Dialog, Event, Flow, Outcome};
 
 use crate::config_store::{Config, Position, Preset};
 use crate::study::questions::{self, Question};

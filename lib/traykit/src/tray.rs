@@ -37,7 +37,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{BOOL, HSTRING, PCSTR, PCWSTR, w};
 
-const CLASS_NAME: PCWSTR = w!("WinkitTray");
+const CLASS_NAME: PCWSTR = w!("TraykitTray");
 const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
 const WTS_SESSION_UNLOCK: usize = 0x8;
 /// The numbers of the uxtheme.dll exports for dark menus. They have no names.

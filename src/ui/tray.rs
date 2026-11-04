@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use winkit::tray::{self, IconImage, MenuItem};
+use traykit::tray::{self, IconImage, MenuItem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {

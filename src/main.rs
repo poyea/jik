@@ -41,7 +41,7 @@ fn main() {
     if let Err(err) = run() {
         let message = format!("{err:#}");
         eprintln!("error: {message}");
-        winkit::show_error("jik", &message);
+        traykit::show_error("jik", &message);
         std::process::exit(1);
     }
 }
@@ -65,7 +65,7 @@ fn run() -> Result<()> {
         Some(other) => bail!("unknown option {other:?}\n\n{USAGE}"),
     };
 
-    let Some(_instance) = winkit::single_instance("jik.SingleInstance")? else {
+    let Some(_instance) = traykit::single_instance("jik.SingleInstance")? else {
         bail!("jik is already running. Use its tray icon, or quit it first.");
     };
 
@@ -84,7 +84,7 @@ fn run() -> Result<()> {
     );
 
     if mode == Mode::Settings {
-        let autostart = winkit::autostart::is_enabled(app::APP_NAME);
+        let autostart = traykit::autostart::is_enabled(app::APP_NAME);
         if let Opened::Saved(edited) =
             app::open_settings(&files, &settings.config, autostart, &questions)?
             && edited.autostart != autostart
