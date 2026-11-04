@@ -1,13 +1,16 @@
 // Copyright (c) 2026 John Law
 // SPDX-License-Identifier: MIT
 
+//! A notification-area (tray) icon with a menu, and the wait loop of a tray app.
+//!
+//! [`Tray::wait`] is the main loop of the app: it handles the window messages of the thread and
+//! returns when the user picks a menu command, when a deadline comes, or when the user quits.
+
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::Ui;
-use crate::error::{Call, Error, Result};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, TRUE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS,
@@ -26,15 +29,18 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
-    DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos, GetSystemMetrics, HICON, HMENU,
-    ICONINFO, MENU_ITEM_FLAGS, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG,
-    MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE, PeekMessageW, PostMessageW,
-    PostQuitMessage, QS_ALLINPUT, RegisterWindowMessageW, SM_CXSMICON, SetForegroundWindow,
-    TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateMessage, WM_APP, WM_LBUTTONUP, WM_NULL, WM_QUIT, WM_RBUTTONUP, WNDCLASSEXW,
-    WS_EX_TOOLWINDOW, WS_POPUP,
+    DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetCursorPos, GetSystemMetrics,
+    GetWindowLongPtrW, HICON, HMENU, ICONINFO, MENU_ITEM_FLAGS, MF_CHECKED, MF_GRAYED, MF_POPUP,
+    MF_SEPARATOR, MF_STRING, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE,
+    PeekMessageW, PostMessageW, PostQuitMessage, QS_ALLINPUT, RegisterWindowMessageW, SM_CXSMICON,
+    SetForegroundWindow, SetWindowLongPtrW, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
+    TPM_RIGHTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_LBUTTONUP,
+    WM_NCDESTROY, WM_NULL, WM_QUIT, WM_RBUTTONUP, WNDCLASSEXW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{BOOL, HSTRING, PCSTR, PCWSTR, w};
+
+use crate::Ui;
+use crate::error::{Call, Error, Result};
 
 const CLASS_NAME: PCWSTR = w!("TraykitTray");
 const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
@@ -47,6 +53,7 @@ const FLUSH_MENU_THEMES: u16 = 136;
 const APP_MODE_ALLOW_DARK: i32 = 1;
 const WM_TRAY: u32 = WM_APP + 1;
 const ICON_ID: u32 = 1;
+/// Menu item ids start here. 0 means that the user closed the menu without a choice.
 const FIRST_ID: usize = 1;
 /// The number of 100 ns intervals from 1601-01-01 (FILETIME start) to 1970-01-01 (Unix start).
 const UNIX_EPOCH_AS_FILETIME: i64 = 116_444_736_000_000_000;
@@ -60,10 +67,116 @@ fn absolute_due_time(at: SystemTime) -> i64 {
         .saturating_add(UNIX_EPOCH_AS_FILETIME)
 }
 
+/// One item of the tray menu. `C` is the command type of the app.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MenuItem {
+pub enum MenuItem<C> {
+    /// An item that the user can pick. [`Tray::wait`] then returns [`Wake::Command`].
     Command {
-        id: u32,
+        /// The command that [`Tray::wait`] returns.
+        command: C,
+        /// The text of the item.
+        label: String,
+        /// A disabled item shows in gray, and the user cannot pick it.
+        enabled: bool,
+        /// A checked item shows a check mark.
+        checked: bool,
+    },
+    /// A gray text that the user cannot pick, for example a status line.
+    Label(String),
+    /// A line between groups of items.
+    Separator,
+    /// An item that opens more items.
+    Submenu {
+        /// The text of the item.
+        label: String,
+        /// The items of the submenu.
+        items: Vec<MenuItem<C>>,
+    },
+    /// The item that ends the app. [`Tray::wait`] then returns [`Wake::Quit`]. If a popup or a
+    /// dialog shows at that time, it closes first and gives its own quit result.
+    Quit(String),
+}
+
+impl<C> MenuItem<C> {
+    /// An enabled, unchecked command item.
+    pub fn command(command: C, label: impl Into<String>) -> Self {
+        MenuItem::Command {
+            command,
+            label: label.into(),
+            enabled: true,
+            checked: false,
+        }
+    }
+
+    /// Enable or disable a command item. Other items do not change.
+    #[must_use]
+    pub fn enabled(mut self, on: bool) -> Self {
+        if let MenuItem::Command { enabled, .. } = &mut self {
+            *enabled = on;
+        }
+        self
+    }
+
+    /// Set or clear the check mark of a command item. Other items do not change.
+    #[must_use]
+    pub fn checked(mut self, on: bool) -> Self {
+        if let MenuItem::Command { checked, .. } = &mut self {
+            *checked = on;
+        }
+        self
+    }
+}
+
+/// Why [`Tray::wait`] returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wake<C> {
+    /// The time given to [`Tray::wait`] came.
+    Deadline,
+    /// The user unlocked the session: someone is at the screen again.
+    SessionUnlocked,
+    /// The user picked a command item.
+    Command(C),
+    /// The user picked the [`MenuItem::Quit`] item, or the thread got `WM_QUIT`.
+    Quit,
+}
+
+/// The picture of a tray icon.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Icon {
+    size: u32,
+    pixels: Vec<u32>,
+}
+
+impl Icon {
+    /// The size in pixels that Windows uses for tray icons now. It changes with the display
+    /// scale, so make the icon at this size just before [`Tray::new`].
+    pub fn tray_size() -> u32 {
+        unsafe { GetSystemMetrics(SM_CXSMICON).max(16) as u32 }
+    }
+
+    /// A square icon of `size` by `size` pixels. `pixels` go row by row from the top-left
+    /// corner. Each pixel is `0xAARRGGBB` with straight (not premultiplied) alpha.
+    pub fn from_argb(size: u32, pixels: Vec<u32>) -> Result<Self> {
+        if pixels.len() as u64 != u64::from(size) * u64::from(size) {
+            return Err(Error::InvalidIcon {
+                size,
+                pixels: pixels.len(),
+            });
+        }
+        Ok(Self { size, pixels })
+    }
+
+    /// The width and height in pixels.
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+}
+
+/// A menu item as the window procedure keeps it: commands are numbers in the action list.
+#[derive(Debug, Clone)]
+enum Entry {
+    Action {
+        index: usize,
         label: String,
         enabled: bool,
         checked: bool,
@@ -72,46 +185,237 @@ pub enum MenuItem {
     Separator,
     Submenu {
         label: String,
-        items: Vec<MenuItem>,
+        entries: Vec<Entry>,
     },
     Quit(String),
 }
 
-impl MenuItem {
-    pub fn command(id: u32, label: impl Into<String>) -> Self {
-        MenuItem::Command {
-            id,
-            label: label.into(),
-            enabled: true,
-            checked: false,
+/// The state that the window procedure uses. It has no type parameter, so one window class
+/// serves all command types.
+struct Shared {
+    entries: RefCell<Vec<Entry>>,
+    /// It changes with each new menu. A choice from an older menu is not used.
+    generation: Cell<u64>,
+    chosen: RefCell<VecDeque<(u64, usize)>>,
+    icon_data: RefCell<NOTIFYICONDATAW>,
+    taskbar_created: u32,
+    unlocked: Cell<bool>,
+}
+
+/// A tray icon and its menu. `C` is the command type of the app, for example an enum.
+///
+/// Create it with a [`Ui`] on the thread that runs [`Tray::wait`].
+pub struct Tray<C> {
+    _ui: Ui,
+    hwnd: HWND,
+    icon: HICON,
+    timer: DeadlineTimer,
+    shared: *const Shared,
+    commands: Vec<C>,
+}
+
+impl<C: Clone> Tray<C> {
+    /// Add an icon with this tooltip to the notification area. The menu is empty until
+    /// [`Tray::set_menu`].
+    pub fn new(ui: &Ui, tooltip: &str, icon: &Icon) -> Result<Self> {
+        let timer = DeadlineTimer::new()?;
+        let hinstance = ui.hinstance();
+        crate::register_class(&WNDCLASSEXW {
+            cbSize: size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(wndproc),
+            hInstance: hinstance,
+            lpszClassName: CLASS_NAME,
+            ..Default::default()
+        })?;
+        unsafe {
+            // Use a hidden top-level window, not a message-only window.
+            // Only a top-level window gets the TaskbarCreated message when Explorer restarts.
+            let hwnd = CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                CLASS_NAME,
+                CLASS_NAME,
+                WS_POPUP,
+                0,
+                0,
+                0,
+                0,
+                None,
+                None,
+                Some(hinstance),
+                None,
+            )
+            .call("CreateWindowExW")?;
+            let icon = match create_icon(icon) {
+                Ok(icon) => icon,
+                Err(err) => {
+                    let _ = DestroyWindow(hwnd);
+                    return Err(err);
+                }
+            };
+            let mut data = NOTIFYICONDATAW {
+                cbSize: size_of::<NOTIFYICONDATAW>() as u32,
+                hWnd: hwnd,
+                uID: ICON_ID,
+                uFlags: NIF_ICON | NIF_MESSAGE | NIF_TIP,
+                uCallbackMessage: WM_TRAY,
+                hIcon: icon,
+                ..Default::default()
+            };
+            set_tip(&mut data, tooltip);
+            let shared = Box::into_raw(Box::new(Shared {
+                entries: RefCell::new(Vec::new()),
+                generation: Cell::new(0),
+                chosen: RefCell::new(VecDeque::new()),
+                icon_data: RefCell::new(data),
+                taskbar_created: RegisterWindowMessageW(w!("TaskbarCreated")),
+                unlocked: Cell::new(false),
+            }));
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, shared as isize);
+            allow_dark_menus(hwnd);
+            // Without it, the tray does not know when the user unlocks. Then a held popup waits
+            // for its next check.
+            let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
+
+            let tray = Self {
+                _ui: ui.clone(),
+                hwnd,
+                icon,
+                timer,
+                shared,
+                commands: Vec::new(),
+            };
+            if !Shell_NotifyIconW(NIM_ADD, &data).as_bool() {
+                return Err(Error::TrayIconNotAdded);
+            }
+            Ok(tray)
+        }
+    }
+
+    fn shared(&self) -> &Shared {
+        unsafe { &*self.shared }
+    }
+
+    /// Replace the menu. A choice that the user made in the old menu and that [`Tray::wait`]
+    /// did not return yet is dropped.
+    pub fn set_menu(&mut self, items: &[MenuItem<C>]) {
+        self.commands.clear();
+        let entries = to_entries(items, &mut self.commands);
+        let shared = self.shared();
+        shared.entries.replace(entries);
+        shared.generation.set(shared.generation.get() + 1);
+    }
+
+    /// Change the text that shows when the pointer is on the icon. Windows shows up to 127
+    /// characters.
+    pub fn set_tooltip(&self, tooltip: &str) {
+        let mut data = self.shared().icon_data.borrow_mut();
+        set_tip(&mut data, tooltip);
+        unsafe {
+            let _ = Shell_NotifyIconW(NIM_MODIFY, &*data);
+        }
+    }
+
+    /// Handle the window messages of the thread until there is something for the app: a menu
+    /// command, the time `until` (if given), an unlock of the session, or a quit.
+    ///
+    /// The deadline is a clock time. It stays correct after sleep, hibernation, or a change of
+    /// the clock. While it waits, the thread uses no CPU.
+    pub fn wait(&self, until: Option<SystemTime>) -> Result<Wake<C>> {
+        if until.is_none() {
+            self.timer.cancel();
+        }
+        let shared = self.shared();
+        loop {
+            unsafe {
+                let mut msg = MSG::default();
+                while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                    if msg.message == WM_QUIT {
+                        return Ok(Wake::Quit);
+                    }
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+            }
+            loop {
+                let chosen = shared.chosen.borrow_mut().pop_front();
+                let Some((generation, index)) = chosen else {
+                    break;
+                };
+                if generation == shared.generation.get()
+                    && let Some(command) = self.commands.get(index)
+                {
+                    return Ok(Wake::Command(command.clone()));
+                }
+            }
+            if shared.unlocked.replace(false) {
+                return Ok(Wake::SessionUnlocked);
+            }
+            if let Some(t) = until {
+                if SystemTime::now() >= t {
+                    return Ok(Wake::Deadline);
+                }
+                self.timer.set(t)?;
+            }
+            unsafe {
+                MsgWaitForMultipleObjectsEx(
+                    Some(&[self.timer.0]),
+                    INFINITE,
+                    QS_ALLINPUT,
+                    MWMO_INPUTAVAILABLE,
+                );
+            }
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Wake {
-    Deadline,
-    /// The user unlocked the session: someone is at the screen again.
-    SessionUnlocked,
-    Command(u32),
-    Quit,
+impl<C> Drop for Tray<C> {
+    fn drop(&mut self) {
+        unsafe {
+            let data = (*self.shared).icon_data.borrow();
+            let _ = Shell_NotifyIconW(NIM_DELETE, &*data);
+            drop(data);
+            let _ = DestroyIcon(self.icon);
+            let _ = WTSUnRegisterSessionNotification(self.hwnd);
+            let _ = DestroyWindow(self.hwnd);
+            drop(Box::from_raw(self.shared as *mut Shared));
+        }
+    }
 }
 
-pub struct IconImage {
-    pub size: u32,
-    pub pixels: Vec<u32>,
+fn to_entries<C: Clone>(items: &[MenuItem<C>], commands: &mut Vec<C>) -> Vec<Entry> {
+    items
+        .iter()
+        .map(|item| match item {
+            MenuItem::Command {
+                command,
+                label,
+                enabled,
+                checked,
+            } => {
+                commands.push(command.clone());
+                Entry::Action {
+                    index: commands.len() - 1,
+                    label: label.clone(),
+                    enabled: *enabled,
+                    checked: *checked,
+                }
+            }
+            MenuItem::Label(label) => Entry::Label(label.clone()),
+            MenuItem::Separator => Entry::Separator,
+            MenuItem::Submenu { label, items } => Entry::Submenu {
+                label: label.clone(),
+                entries: to_entries(items, commands),
+            },
+            MenuItem::Quit(label) => Entry::Quit(label.clone()),
+        })
+        .collect()
 }
 
-pub fn icon_size() -> u32 {
-    unsafe { GetSystemMetrics(SM_CXSMICON).max(16) as u32 }
-}
-
-thread_local! {
-    static COMMANDS: RefCell<VecDeque<u32>> = const { RefCell::new(VecDeque::new()) };
-    static MENU: RefCell<Vec<MenuItem>> = const { RefCell::new(Vec::new()) };
-    static ICON_DATA: RefCell<Option<NOTIFYICONDATAW>> = const { RefCell::new(None) };
-    static TASKBAR_CREATED: Cell<u32> = const { Cell::new(0) };
-    static UNLOCKED: Cell<bool> = const { Cell::new(false) };
+fn set_tip(data: &mut NOTIFYICONDATAW, tip: &str) {
+    let max = data.szTip.len() - 1;
+    let wide: Vec<u16> = tip.encode_utf16().take(max).collect();
+    data.szTip = [0; 128];
+    data.szTip[..wide.len()].copy_from_slice(&wide);
 }
 
 /// An absolute timer fires at the correct clock time after sleep, hibernation, or a clock change.
@@ -147,204 +451,59 @@ impl Drop for DeadlineTimer {
     }
 }
 
-pub struct Tray {
-    _ui: Ui,
-    hwnd: HWND,
-    icon: HICON,
-    timer: DeadlineTimer,
-}
-
-impl Tray {
-    pub fn new(ui: &Ui, tooltip: &str, icon: &IconImage) -> Result<Self> {
-        let timer = DeadlineTimer::new()?;
-        let hinstance = ui.hinstance();
-        crate::register_class(&WNDCLASSEXW {
-            cbSize: size_of::<WNDCLASSEXW>() as u32,
-            lpfnWndProc: Some(wndproc),
-            hInstance: hinstance,
-            lpszClassName: CLASS_NAME,
-            ..Default::default()
-        })?;
-        unsafe {
-            // Use a hidden top-level window, not a message-only window.
-            // Only a top-level window gets the TaskbarCreated message when Explorer restarts.
-            let hwnd = CreateWindowExW(
-                WS_EX_TOOLWINDOW,
-                CLASS_NAME,
-                CLASS_NAME,
-                WS_POPUP,
-                0,
-                0,
-                0,
-                0,
-                None,
-                None,
-                Some(hinstance),
-                None,
-            )
-            .call("CreateWindowExW(tray)")?;
-            TASKBAR_CREATED.set(RegisterWindowMessageW(w!("TaskbarCreated")));
-            allow_dark_menus(hwnd);
-            // Without it, the tray does not know when the user unlocks. Then a held popup waits
-            // for its next check.
-            let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
-
-            let icon = match create_icon(icon) {
-                Ok(icon) => icon,
-                Err(err) => {
-                    let _ = DestroyWindow(hwnd);
-                    return Err(err);
-                }
-            };
-            let mut data = NOTIFYICONDATAW {
-                cbSize: size_of::<NOTIFYICONDATAW>() as u32,
-                hWnd: hwnd,
-                uID: ICON_ID,
-                uFlags: NIF_ICON | NIF_MESSAGE | NIF_TIP,
-                uCallbackMessage: WM_TRAY,
-                hIcon: icon,
-                ..Default::default()
-            };
-            set_tip(&mut data, tooltip);
-            ICON_DATA.set(Some(data));
-            if !Shell_NotifyIconW(NIM_ADD, &data).as_bool() {
-                ICON_DATA.set(None);
-                let _ = DestroyIcon(icon);
-                let _ = DestroyWindow(hwnd);
-                return Err(Error::TrayIconNotAdded);
-            }
-            Ok(Self {
-                _ui: ui.clone(),
-                hwnd,
-                icon,
-                timer,
-            })
-        }
-    }
-
-    pub fn set_menu(&self, items: Vec<MenuItem>) {
-        MENU.set(items);
-    }
-
-    pub fn set_tooltip(&self, tooltip: &str) {
-        ICON_DATA.with_borrow_mut(|data| {
-            if let Some(data) = data {
-                set_tip(data, tooltip);
-                unsafe {
-                    let _ = Shell_NotifyIconW(NIM_MODIFY, data);
-                }
-            }
-        });
-    }
-
-    pub fn wait(&self, until: Option<SystemTime>) -> Result<Wake> {
-        if until.is_none() {
-            self.timer.cancel();
-        }
-        loop {
-            unsafe {
-                let mut msg = MSG::default();
-                while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
-                    if msg.message == WM_QUIT {
-                        return Ok(Wake::Quit);
-                    }
-                    let _ = TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
-                }
-            }
-            if let Some(id) = COMMANDS.with_borrow_mut(|q| q.pop_front()) {
-                return Ok(Wake::Command(id));
-            }
-            if UNLOCKED.replace(false) {
-                return Ok(Wake::SessionUnlocked);
-            }
-            if let Some(t) = until {
-                if SystemTime::now() >= t {
-                    return Ok(Wake::Deadline);
-                }
-                self.timer.set(t)?;
-            }
-            unsafe {
-                MsgWaitForMultipleObjectsEx(
-                    Some(&[self.timer.0]),
-                    INFINITE,
-                    QS_ALLINPUT,
-                    MWMO_INPUTAVAILABLE,
-                );
-            }
-        }
-    }
-}
-
-impl Drop for Tray {
-    fn drop(&mut self) {
-        unsafe {
-            ICON_DATA.with_borrow_mut(|data| {
-                if let Some(data) = data.take() {
-                    let _ = Shell_NotifyIconW(NIM_DELETE, &data);
-                }
-            });
-            let _ = DestroyIcon(self.icon);
-            let _ = WTSUnRegisterSessionNotification(self.hwnd);
-            let _ = DestroyWindow(self.hwnd);
-        }
-    }
-}
-
-fn set_tip(data: &mut NOTIFYICONDATAW, tip: &str) {
-    let max = data.szTip.len() - 1;
-    let wide: Vec<u16> = tip.encode_utf16().take(max).collect();
-    data.szTip = [0; 128];
-    data.szTip[..wide.len()].copy_from_slice(&wide);
-}
-
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    match msg {
-        WM_TRAY => {
-            let event = (lparam.0 & 0xFFFF) as u32;
-            if event == WM_LBUTTONUP || event == WM_RBUTTONUP {
-                show_menu(hwnd);
-            }
-            LRESULT(0)
+    unsafe {
+        let shared = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Shared;
+        if shared.is_null() {
+            return DefWindowProcW(hwnd, msg, wparam, lparam);
         }
-        WM_WTSSESSION_CHANGE => {
-            if wparam.0 == WTS_SESSION_UNLOCK {
-                UNLOCKED.set(true);
-            }
-            LRESULT(0)
-        }
-        m if m != 0 && m == TASKBAR_CREATED.get() => {
-            ICON_DATA.with_borrow(|data| {
-                if let Some(data) = data {
-                    unsafe {
-                        let _ = Shell_NotifyIconW(NIM_ADD, data);
-                    }
+        let shared = &*shared;
+        match msg {
+            WM_TRAY => {
+                let event = (lparam.0 & 0xFFFF) as u32;
+                if event == WM_LBUTTONUP || event == WM_RBUTTONUP {
+                    show_menu(hwnd, shared);
                 }
-            });
-            LRESULT(0)
+                LRESULT(0)
+            }
+            WM_WTSSESSION_CHANGE => {
+                if wparam.0 == WTS_SESSION_UNLOCK {
+                    shared.unlocked.set(true);
+                }
+                LRESULT(0)
+            }
+            m if m != 0 && m == shared.taskbar_created => {
+                let data = *shared.icon_data.borrow();
+                let _ = Shell_NotifyIconW(NIM_ADD, &data);
+                LRESULT(0)
+            }
+            WM_NCDESTROY => {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+            _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
-        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
     }
 }
 
 #[derive(Clone, Copy)]
-enum Action {
-    Command(u32),
+enum Choice {
+    Action(usize),
     Quit,
 }
 
-fn register(actions: &mut Vec<Action>, action: Action) -> usize {
-    actions.push(action);
-    FIRST_ID + actions.len() - 1
+fn add_choice(choices: &mut Vec<Choice>, choice: Choice) -> usize {
+    choices.push(choice);
+    FIRST_ID + choices.len() - 1
 }
 
-fn append_items(menu: HMENU, items: &[MenuItem], actions: &mut Vec<Action>) {
+fn append_entries(menu: HMENU, entries: &[Entry], choices: &mut Vec<Choice>) {
     let flag = |on: bool, f: MENU_ITEM_FLAGS| if on { f } else { MENU_ITEM_FLAGS(0) };
     unsafe {
-        for item in items {
-            match item {
-                MenuItem::Command {
-                    id,
+        for entry in entries {
+            match entry {
+                Entry::Action {
+                    index,
                     label,
                     enabled,
                     checked,
@@ -352,27 +511,27 @@ fn append_items(menu: HMENU, items: &[MenuItem], actions: &mut Vec<Action>) {
                     let _ = AppendMenuW(
                         menu,
                         MF_STRING | flag(!enabled, MF_GRAYED) | flag(*checked, MF_CHECKED),
-                        register(actions, Action::Command(*id)),
+                        add_choice(choices, Choice::Action(*index)),
                         &HSTRING::from(label),
                     );
                 }
-                MenuItem::Label(label) => {
+                Entry::Label(label) => {
                     let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, &HSTRING::from(label));
                 }
-                MenuItem::Separator => {
+                Entry::Separator => {
                     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
                 }
-                MenuItem::Submenu { label, items } => {
+                Entry::Submenu { label, entries } => {
                     if let Ok(sub) = CreatePopupMenu() {
-                        append_items(sub, items, actions);
+                        append_entries(sub, entries, choices);
                         let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, &HSTRING::from(label));
                     }
                 }
-                MenuItem::Quit(label) => {
+                Entry::Quit(label) => {
                     let _ = AppendMenuW(
                         menu,
                         MF_STRING,
-                        register(actions, Action::Quit),
+                        add_choice(choices, Choice::Quit),
                         &HSTRING::from(label),
                     );
                 }
@@ -381,14 +540,15 @@ fn append_items(menu: HMENU, items: &[MenuItem], actions: &mut Vec<Action>) {
     }
 }
 
-fn show_menu(hwnd: HWND) {
-    let items = MENU.with_borrow(|m| m.clone());
+fn show_menu(hwnd: HWND, shared: &Shared) {
+    let entries = shared.entries.borrow().clone();
+    let generation = shared.generation.get();
     unsafe {
         let Ok(menu) = CreatePopupMenu() else {
             return;
         };
-        let mut actions = Vec::new();
-        append_items(menu, &items, &mut actions);
+        let mut choices = Vec::new();
+        append_entries(menu, &entries, &mut choices);
 
         let mut pt = POINT::default();
         let _ = GetCursorPos(&mut pt);
@@ -407,22 +567,18 @@ fn show_menu(hwnd: HWND) {
         let _ = DestroyMenu(menu);
 
         let index = (chosen.0 as usize).wrapping_sub(FIRST_ID);
-        match actions.get(index) {
-            Some(Action::Command(id)) => COMMANDS.with_borrow_mut(|q| q.push_back(*id)),
-            Some(Action::Quit) => PostQuitMessage(0),
+        match choices.get(index) {
+            Some(Choice::Action(action)) => {
+                shared.chosen.borrow_mut().push_back((generation, *action));
+            }
+            Some(Choice::Quit) => PostQuitMessage(0),
             None => {}
         }
     }
 }
 
-fn create_icon(image: &IconImage) -> Result<HICON> {
+fn create_icon(image: &Icon) -> Result<HICON> {
     let size = image.size as i32;
-    if image.pixels.len() as u64 != u64::from(image.size) * u64::from(image.size) {
-        return Err(Error::InvalidIcon {
-            size: image.size,
-            pixels: image.pixels.len(),
-        });
-    }
     unsafe {
         let info = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
@@ -511,5 +667,54 @@ mod tests {
     fn due_time_before_1970_is_1970() {
         let before = UNIX_EPOCH - Duration::from_secs(60);
         assert_eq!(absolute_due_time(before), UNIX_EPOCH_AS_FILETIME);
+    }
+
+    #[test]
+    fn icon_needs_one_pixel_per_cell() {
+        assert!(Icon::from_argb(2, vec![0; 4]).is_ok());
+        assert!(matches!(
+            Icon::from_argb(2, vec![0; 3]),
+            Err(Error::InvalidIcon { size: 2, pixels: 3 })
+        ));
+    }
+
+    #[test]
+    fn builders_change_only_command_items() {
+        let item = MenuItem::command('a', "A").enabled(false).checked(true);
+        assert_eq!(
+            item,
+            MenuItem::Command {
+                command: 'a',
+                label: "A".into(),
+                enabled: false,
+                checked: true,
+            }
+        );
+        assert_eq!(
+            MenuItem::<char>::Separator.checked(true),
+            MenuItem::Separator
+        );
+    }
+
+    #[test]
+    fn entries_number_the_commands_in_order() {
+        let items = vec![
+            MenuItem::Label("status".into()),
+            MenuItem::command(10, "a"),
+            MenuItem::Submenu {
+                label: "more".into(),
+                items: vec![MenuItem::command(20, "b"), MenuItem::Separator],
+            },
+            MenuItem::Quit("quit".into()),
+        ];
+        let mut commands = Vec::new();
+        let entries = to_entries(&items, &mut commands);
+        assert_eq!(commands, [10, 20]);
+        assert!(matches!(entries[1], Entry::Action { index: 0, .. }));
+        let Entry::Submenu { entries: sub, .. } = &entries[2] else {
+            panic!("expected a submenu");
+        };
+        assert!(matches!(sub[0], Entry::Action { index: 1, .. }));
+        assert!(matches!(entries[3], Entry::Quit(_)));
     }
 }
