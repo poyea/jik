@@ -6,6 +6,7 @@
 
 pub mod autostart;
 pub mod dialog;
+pub mod error;
 pub mod placement;
 pub mod popup;
 pub mod presence;
@@ -13,7 +14,9 @@ pub mod process;
 mod theme;
 pub mod tray;
 
-use anyhow::{Context, Result};
+pub use error::{Error, Result};
+
+use crate::error::Call;
 use windows::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, POINT};
 use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint};
 use windows::Win32::System::Threading::CreateMutexW;
@@ -58,7 +61,7 @@ impl Drop for InstanceGuard {
 pub fn single_instance(name: &str) -> Result<Option<InstanceGuard>> {
     unsafe {
         let handle = CreateMutexW(None, true, &HSTRING::from(format!("Local\\{name}")))
-            .context("CreateMutexW")?;
+            .call("CreateMutexW")?;
         if GetLastError() == ERROR_ALREADY_EXISTS {
             let _ = CloseHandle(handle);
             return Ok(None);

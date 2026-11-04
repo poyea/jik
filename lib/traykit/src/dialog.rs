@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::c_void;
 
-use anyhow::{Context, Result};
+use crate::error::{Call, Error, Result};
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D_RECT_F, D2D1_ALPHA_MODE_IGNORE, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
@@ -284,7 +284,7 @@ struct Painter {
 }
 
 impl Painter {
-    fn new(scale: f32) -> Result<Self> {
+    fn new(scale: f32) -> windows::core::Result<Self> {
         unsafe {
             let factory: ID2D1Factory = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
             let target = factory.CreateDCRenderTarget(&D2D1_RENDER_TARGET_PROPERTIES {
@@ -299,7 +299,7 @@ impl Painter {
                 minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
             })?;
             let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
-            let format = |alignment| -> Result<IDWriteTextFormat> {
+            let format = |alignment| -> windows::core::Result<IDWriteTextFormat> {
                 let format = dwrite.CreateTextFormat(
                     FONT_FACES[0],
                     None,
@@ -406,12 +406,12 @@ impl Dialog {
                 dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
                 dwICC: ICC_STANDARD_CLASSES,
             });
-            let hinstance: HINSTANCE = GetModuleHandleW(None).context("GetModuleHandleW")?.into();
+            let hinstance: HINSTANCE = GetModuleHandleW(None).call("GetModuleHandleW")?.into();
             let wc = WNDCLASSEXW {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
                 lpfnWndProc: Some(wndproc),
                 hInstance: hinstance,
-                hCursor: LoadCursorW(None, IDC_ARROW).context("LoadCursorW")?,
+                hCursor: LoadCursorW(None, IDC_ARROW).call("LoadCursorW")?,
                 lpszClassName: CLASS_NAME,
                 ..Default::default()
             };
@@ -421,7 +421,7 @@ impl Dialog {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
                 lpfnWndProc: Some(placement_proc),
                 hInstance: hinstance,
-                hCursor: LoadCursorW(None, IDC_SIZEALL).context("LoadCursorW")?,
+                hCursor: LoadCursorW(None, IDC_SIZEALL).call("LoadCursorW")?,
                 lpszClassName: PLACEMENT_CLASS,
                 ..Default::default()
             });
@@ -438,7 +438,7 @@ impl Dialog {
                 bottom: scaled(height, scale),
             };
             AdjustWindowRectExForDpi(&mut frame, style, false, ex_style, dpi)
-                .context("AdjustWindowRectExForDpi")?;
+                .call("AdjustWindowRectExForDpi")?;
             let (outer_w, outer_h) = (frame.right - frame.left, frame.bottom - frame.top);
 
             let hwnd = CreateWindowExW(
@@ -455,7 +455,7 @@ impl Dialog {
                 Some(hinstance),
                 None,
             )
-            .context("CreateWindowExW(dialog)")?;
+            .call("CreateWindowExW(dialog)")?;
 
             let look = Look::new(theme, scale);
             set_dwm_attribute(
@@ -690,7 +690,7 @@ impl Dialog {
                 shared.fields.borrow_mut().pop();
                 shared.placements.borrow_mut().pop();
                 shared.window_sizes.borrow_mut().pop();
-                return Err(err).context("CreateWindowExW(control)");
+                return Err(err).call("CreateWindowExW(control)");
             }
         };
         let font = match control {
@@ -886,7 +886,7 @@ impl Dialog {
                         return Ok(Outcome::Quit);
                     }
                     -1 => {
-                        return Err(windows::core::Error::from_thread()).context("GetMessageW");
+                        return Err(Error::last("GetMessageW"));
                     }
                     _ => {}
                 }

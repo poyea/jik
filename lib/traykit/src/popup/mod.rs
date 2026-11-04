@@ -7,7 +7,7 @@ use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::time::{Duration, Instant, SystemTime};
 
-use anyhow::{Context, Result};
+use crate::error::{Call, Error, Result};
 use windows::System::DispatcherQueueController;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
@@ -117,17 +117,17 @@ impl ChoicePopup {
             let _ = RoInitialize(RO_INIT_SINGLETHREADED);
             let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-            let hinstance: HINSTANCE = GetModuleHandleW(None).context("GetModuleHandleW")?.into();
+            let hinstance: HINSTANCE = GetModuleHandleW(None).call("GetModuleHandleW")?.into();
             let wc = WNDCLASSEXW {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
                 lpfnWndProc: Some(wndproc),
                 hInstance: hinstance,
-                hCursor: LoadCursorW(None, IDC_ARROW).context("LoadCursorW")?,
+                hCursor: LoadCursorW(None, IDC_ARROW).call("LoadCursorW")?,
                 lpszClassName: CLASS_NAME,
                 ..Default::default()
             };
             if RegisterClassExW(&wc) == 0 {
-                return Err(windows::core::Error::from_thread()).context("RegisterClassExW");
+                return Err(Error::last("RegisterClassExW"));
             }
 
             Ok(Self {
@@ -179,7 +179,7 @@ impl ChoicePopup {
                 Some(&mut work as *mut _ as *mut c_void),
                 SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
             )
-            .context("SystemParametersInfoW(SPI_GETWORKAREA)")?;
+            .call("SystemParametersInfoW(SPI_GETWORKAREA)")?;
             let margin = (SCREEN_MARGIN * scale).round() as i32;
             let (x, y) = self.placement.place(
                 (work.left, work.top, work.right, work.bottom),
@@ -202,7 +202,7 @@ impl ChoicePopup {
                 Some(self.hinstance),
                 None,
             )
-            .context("CreateWindowExW")?;
+            .call("CreateWindowExW")?;
 
             set_dwm_attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND.0);
             set_dwm_attribute(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, TRUE.0);
@@ -259,7 +259,7 @@ impl ChoicePopup {
                     0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
                 )
-                .context("SetWindowPos")?;
+                .call("SetWindowPos")?;
                 shared.scene.fade(0.0, 1.0, FADE_DURATION)?;
                 if let Some(c) = shared.countdown.borrow_mut().as_mut() {
                     c.last_tick = Instant::now();

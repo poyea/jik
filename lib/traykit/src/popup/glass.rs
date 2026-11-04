@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use crate::error::{Call, Result};
 use windows::Foundation::{Size, TimeSpan};
 use windows::Graphics::DirectX::{DirectXAlphaMode, DirectXPixelFormat};
 use windows::System::DispatcherQueueController;
@@ -48,7 +48,7 @@ pub fn dispatcher_queue() -> Result<DispatcherQueueController> {
             threadType: DQTYPE_THREAD_CURRENT,
             apartmentType: DQTAT_COM_STA,
         })
-        .context("CreateDispatcherQueueController")
+        .call("CreateDispatcherQueueController")
     }
 }
 
@@ -70,23 +70,24 @@ impl Drop for Graphics {
 impl Graphics {
     pub fn new() -> Result<Self> {
         unsafe {
-            let compositor = Compositor::new().context("creating Compositor")?;
+            let compositor = Compositor::new().call("creating Compositor")?;
 
             let d3d = create_d3d_device()?;
-            let dxgi: IDXGIDevice = d3d.cast()?;
+            let dxgi: IDXGIDevice = d3d.cast().call("QueryInterface(IDXGIDevice)")?;
             let d2d_factory: ID2D1Factory1 =
                 D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)
-                    .context("D2D1CreateFactory")?;
+                    .call("D2D1CreateFactory")?;
             let d2d_device = d2d_factory
                 .CreateDevice(&dxgi)
-                .context("ID2D1Factory1::CreateDevice")?;
+                .call("ID2D1Factory1::CreateDevice")?;
             let graphics_device = compositor
-                .cast::<ICompositorInterop>()?
+                .cast::<ICompositorInterop>()
+                .call("QueryInterface(ICompositorInterop)")?
                 .CreateGraphicsDevice(&d2d_device)
-                .context("CreateGraphicsDevice")?;
+                .call("CreateGraphicsDevice")?;
 
             let dwrite: IDWriteFactory =
-                DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).context("DWriteCreateFactory")?;
+                DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).call("DWriteCreateFactory")?;
 
             Ok(Self {
                 compositor,
@@ -115,10 +116,14 @@ impl Graphics {
                     size_px,
                     w!(""),
                 )
-                .context("CreateTextFormat")?;
+                .call("CreateTextFormat")?;
             if centered {
-                format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
-                format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+                format
+                    .SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)
+                    .call("SetTextAlignment")?;
+                format
+                    .SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)
+                    .call("SetParagraphAlignment")?;
             }
             Ok(format)
         }
@@ -134,14 +139,14 @@ impl Graphics {
         unsafe {
             self.dwrite
                 .CreateTextLayout(&wide, format, width, f32::MAX)
-                .context("CreateTextLayout")
+                .call("CreateTextLayout")
         }
     }
 }
 
 pub fn layout_height(layout: &IDWriteTextLayout) -> Result<f32> {
     let mut metrics = DWRITE_TEXT_METRICS::default();
-    unsafe { layout.GetMetrics(&mut metrics)? };
+    unsafe { layout.GetMetrics(&mut metrics).call("GetMetrics")? };
     Ok(metrics.height)
 }
 
@@ -165,12 +170,12 @@ fn create_d3d_device() -> Result<ID3D11Device> {
     }
     create(D3D_DRIVER_TYPE_HARDWARE)
         .or_else(|_| create(D3D_DRIVER_TYPE_WARP))
-        .context("D3D11CreateDevice")
+        .call("D3D11CreateDevice")
 }
 
 pub fn layout_width(layout: &IDWriteTextLayout) -> Result<f32> {
     let mut metrics = DWRITE_TEXT_METRICS::default();
-    unsafe { layout.GetMetrics(&mut metrics)? };
+    unsafe { layout.GetMetrics(&mut metrics).call("GetMetrics")? };
     Ok(metrics.width)
 }
 
@@ -192,11 +197,21 @@ impl Scene {
         corner_radius: f32,
         theme: &Theme,
     ) -> Result<Self> {
+        Self::build(gfx, hwnd, width, height, corner_radius, theme).call("creating the popup scene")
+    }
+
+    fn build(
+        gfx: &Graphics,
+        hwnd: HWND,
+        width: f32,
+        height: f32,
+        corner_radius: f32,
+        theme: &Theme,
+    ) -> windows::core::Result<Self> {
         let c = &gfx.compositor;
         let target = unsafe {
             c.cast::<ICompositorDesktopInterop>()?
-                .CreateDesktopWindowTarget(hwnd, true)
-                .context("CreateDesktopWindowTarget")?
+                .CreateDesktopWindowTarget(hwnd, true)?
         };
 
         let full = Vector2 { X: 1.0, Y: 1.0 };
@@ -252,6 +267,11 @@ impl Scene {
     }
 
     pub fn fade(&self, from: f32, to: f32, duration: Duration) -> Result<()> {
+        self.animate_opacity(from, to, duration)
+            .call("starting the popup animation")
+    }
+
+    fn animate_opacity(&self, from: f32, to: f32, duration: Duration) -> windows::core::Result<()> {
         let c = &self.compositor;
         let anim = c.CreateScalarKeyFrameAnimation()?;
         anim.InsertKeyFrame(0.0, from)?;
@@ -261,17 +281,22 @@ impl Scene {
         Ok(())
     }
 
-    pub fn draw(&self, paint: impl FnOnce(&ID2D1DeviceContext) -> Result<()>) -> Result<()> {
-        let interop: ICompositionDrawingSurfaceInterop = self.surface.cast()?;
+    pub fn draw(
+        &self,
+        paint: impl FnOnce(&ID2D1DeviceContext) -> windows::core::Result<()>,
+    ) -> Result<()> {
+        let interop: ICompositionDrawingSurfaceInterop = self
+            .surface
+            .cast()
+            .call("QueryInterface(ICompositionDrawingSurfaceInterop)")?;
         unsafe {
             let mut offset = POINT::default();
-            let dc: ID2D1DeviceContext =
-                interop.BeginDraw(None, &mut offset).context("BeginDraw")?;
+            let dc: ID2D1DeviceContext = interop.BeginDraw(None, &mut offset).call("BeginDraw")?;
             dc.SetTransform(&Matrix3x2::translation(offset.x as f32, offset.y as f32));
             dc.Clear(Some(&rgba(0.0, 0.0, 0.0, 0.0)));
             let painted = paint(&dc);
-            interop.EndDraw().context("EndDraw")?;
-            painted
+            interop.EndDraw().call("EndDraw")?;
+            painted.call("drawing the popup")
         }
     }
 }

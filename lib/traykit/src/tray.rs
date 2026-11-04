@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result};
+use crate::error::{Call, Error, Result};
 use windows::Win32::Foundation::{
     CloseHandle, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, TRUE, WPARAM,
 };
@@ -123,14 +123,14 @@ impl DeadlineTimer {
     fn new() -> Result<Self> {
         let handle = unsafe {
             CreateWaitableTimerExW(None, PCWSTR::null(), 0, TIMER_ALL_ACCESS.0)
-                .context("CreateWaitableTimerExW")?
+                .call("CreateWaitableTimerExW")?
         };
         Ok(Self(handle))
     }
 
     fn set(&self, at: SystemTime) -> Result<()> {
         let due = absolute_due_time(at);
-        unsafe { SetWaitableTimer(self.0, &due, 0, None, None, false).context("SetWaitableTimer") }
+        unsafe { SetWaitableTimer(self.0, &due, 0, None, None, false).call("SetWaitableTimer") }
     }
 
     fn cancel(&self) {
@@ -158,7 +158,7 @@ impl Tray {
     pub fn new(tooltip: &str, icon: &IconImage) -> Result<Self> {
         let timer = DeadlineTimer::new()?;
         unsafe {
-            let hinstance: HINSTANCE = GetModuleHandleW(None).context("GetModuleHandleW")?.into();
+            let hinstance: HINSTANCE = GetModuleHandleW(None).call("GetModuleHandleW")?.into();
             let wc = WNDCLASSEXW {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
                 lpfnWndProc: Some(wndproc),
@@ -167,7 +167,7 @@ impl Tray {
                 ..Default::default()
             };
             if RegisterClassExW(&wc) == 0 {
-                return Err(windows::core::Error::from_thread()).context("RegisterClassExW(tray)");
+                return Err(Error::last("RegisterClassExW(tray)"));
             }
             // Use a hidden top-level window, not a message-only window.
             // Only a top-level window gets the TaskbarCreated message when Explorer restarts.
@@ -185,7 +185,7 @@ impl Tray {
                 Some(hinstance),
                 None,
             )
-            .context("CreateWindowExW(tray)")?;
+            .call("CreateWindowExW(tray)")?;
             TASKBAR_CREATED.set(RegisterWindowMessageW(w!("TaskbarCreated")));
             allow_dark_menus(hwnd);
             // Without it, the tray does not know when the user unlocks. Then a held popup waits
@@ -214,7 +214,7 @@ impl Tray {
                 ICON_DATA.set(None);
                 let _ = DestroyIcon(icon);
                 let _ = DestroyWindow(hwnd);
-                anyhow::bail!("could not add the tray icon");
+                return Err(Error::TrayIconNotAdded);
             }
             Ok(Self { hwnd, icon, timer })
         }
@@ -415,10 +415,12 @@ fn show_menu(hwnd: HWND) {
 
 fn create_icon(image: &IconImage) -> Result<HICON> {
     let size = image.size as i32;
-    anyhow::ensure!(
-        image.pixels.len() == (image.size * image.size) as usize,
-        "icon pixel count does not match its size"
-    );
+    if image.pixels.len() as u64 != u64::from(image.size) * u64::from(image.size) {
+        return Err(Error::InvalidIcon {
+            size: image.size,
+            pixels: image.pixels.len(),
+        });
+    }
     unsafe {
         let info = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
@@ -434,7 +436,7 @@ fn create_icon(image: &IconImage) -> Result<HICON> {
         };
         let mut bits: *mut c_void = std::ptr::null_mut();
         let color = CreateDIBSection(None, &info, DIB_RGB_COLORS, &mut bits, None, 0)
-            .context("CreateDIBSection")?;
+            .call("CreateDIBSection")?;
         std::slice::from_raw_parts_mut(bits as *mut u32, image.pixels.len())
             .copy_from_slice(&image.pixels);
 
@@ -450,7 +452,7 @@ fn create_icon(image: &IconImage) -> Result<HICON> {
         });
         let _ = DeleteObject(color.into());
         let _ = DeleteObject(mask.into());
-        icon.context("CreateIconIndirect")
+        icon.call("CreateIconIndirect")
     }
 }
 

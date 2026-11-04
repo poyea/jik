@@ -1,7 +1,7 @@
 // Copyright (c) 2026 John Law
 // SPDX-License-Identifier: MIT
 
-use anyhow::{Context, Result};
+use crate::error::{Call, Error, Result};
 use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 use windows::Win32::System::Registry::{
     HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
@@ -11,7 +11,7 @@ use windows::core::{HSTRING, PCWSTR, w};
 const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
 
 fn command() -> Result<String> {
-    let exe = std::env::current_exe().context("locating the executable")?;
+    let exe = std::env::current_exe().map_err(Error::CurrentExe)?;
     Ok(format!("\"{}\"", exe.display()))
 }
 
@@ -53,13 +53,13 @@ pub fn set_enabled(name: &str, enabled: bool) -> Result<()> {
                 (wide.len() * size_of::<u16>()) as u32,
             )
             .ok()
-            .context("writing the Run registry entry")
+            .call("RegSetKeyValueW")
         } else {
             let status = RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN_KEY, &name);
             if status == ERROR_FILE_NOT_FOUND {
                 return Ok(());
             }
-            status.ok().context("removing the Run registry entry")
+            status.ok().call("RegDeleteKeyValueW")
         }
     }
 }
