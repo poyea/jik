@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::question::{Question, validate_all};
+use crate::files::{with_line_endings_of, write_atomically};
 
 const SAMPLE: &str = include_str!("sample.toml");
 
@@ -20,10 +21,8 @@ struct QuestionFile {
 /// The file keeps its line endings (CRLF or LF).
 pub fn save(path: &Path, questions: &[Question]) -> Result<()> {
     let old = std::fs::read_to_string(path).unwrap_or_default();
-    let text = crate::config_store::with_line_endings_of(&old, &to_text(questions)?);
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))
+    let text = with_line_endings_of(&old, &to_text(questions)?);
+    write_atomically(path, text)
 }
 
 fn to_text(questions: &[Question]) -> Result<String> {

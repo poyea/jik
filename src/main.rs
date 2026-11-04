@@ -5,6 +5,7 @@
 
 mod app;
 mod config_store;
+mod files;
 mod study;
 mod ui;
 

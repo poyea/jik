@@ -6,6 +6,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 
 use super::config::{Config, Position};
+use crate::files::{with_line_endings_of, write_atomically};
 
 const DEFAULT_CONFIG: &str = include_str!("default.toml");
 const TIME_SCALE_VAR: &str = "JIK_TIME_SCALE";
@@ -47,9 +48,7 @@ pub fn save_config(path: &Path, config: &Config) -> Result<()> {
     };
     let updated = update_config_text(&text, config)
         .with_context(|| format!("updating {}", path.display()))?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, updated).with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))
+    write_atomically(path, updated)
 }
 
 fn update_config_text(text: &str, config: &Config) -> Result<String> {
@@ -70,16 +69,6 @@ fn update_config_text(text: &str, config: &Config) -> Result<String> {
     let updated = with_line_endings_of(text, &doc.to_string());
     toml::from_str::<Config>(&updated).context("the updated file is not a valid config")?;
     Ok(updated)
-}
-
-/// Use the line endings of `original` (CRLF or LF) in `text`, so a save does not change them all.
-pub fn with_line_endings_of(original: &str, text: &str) -> String {
-    let lf = text.replace("\r\n", "\n");
-    if original.contains("\r\n") {
-        lf.replace('\n', "\r\n")
-    } else {
-        lf
-    }
 }
 
 fn time_scale_from_env() -> Result<f64> {

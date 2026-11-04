@@ -100,10 +100,7 @@ impl Schedule {
         let json = serde_json::to_string_pretty(&StateFile {
             cards: self.cards.clone(),
         })?;
-        let tmp = self.path.with_extension("json.tmp");
-        std::fs::write(&tmp, json).with_context(|| format!("writing {}", tmp.display()))?;
-        std::fs::rename(&tmp, &self.path)
-            .with_context(|| format!("replacing {}", self.path.display()))
+        crate::files::write_atomically(&self.path, json)
     }
 
     pub fn config(&self) -> &ScheduleConfig {
