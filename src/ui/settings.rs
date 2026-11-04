@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use traykit::Ui;
-use traykit::dialog::{Bounds, Control, ControlId, Dialog, Event, Flow, Outcome};
+use traykit::dialog::{AnyId, Bounds, Dialog, EditStyle, Event, Flow, Id, Outcome, kind};
 
 use crate::config_store::{Config, Position, Preset};
 use crate::study::questions::{self, Question};
@@ -148,103 +148,57 @@ fn build_questions(drafts: &[Draft]) -> Result<Vec<Question>, Invalid> {
 }
 
 struct Ids {
-    position: ControlId,
-    place: ControlId,
-    auto_skip: ControlId,
-    autostart: ControlId,
-    list: ControlId,
-    add: ControlId,
-    delete: ControlId,
-    text: ControlId,
-    choices: ControlId,
-    answer: ControlId,
-    save: ControlId,
-    cancel: ControlId,
+    position: Id<kind::DropDown>,
+    place: Id<kind::PlacementPicker>,
+    auto_skip: Id<kind::Edit>,
+    autostart: Id<kind::Check>,
+    list: Id<kind::List>,
+    add: Id<kind::Button>,
+    delete: Id<kind::Button>,
+    text: Id<kind::Edit>,
+    choices: Id<kind::Edit>,
+    answer: Id<kind::DropDown>,
+    save: Id<kind::Button>,
+    cancel: Id<kind::Button>,
 }
 
 fn build_dialog(ui: &Ui) -> Result<(Dialog, Ids)> {
     let mut d = Dialog::new(ui, TITLE, 720, 620)?;
     let b = Bounds::new;
-    d.add(Control::Group("General"), b(16, 16, 688, 196))?;
-    d.add(Control::Label("Popup position"), b(32, 54, 216, 26))?;
-    let position = d.add(Control::DropDown, b(256, 54, 180, 26))?;
-    d.add(
-        Control::Label("Auto-skip after (seconds, 0 = off)"),
-        b(32, 88, 216, 26),
-    )?;
-    let auto_skip = d.add(
-        Control::Edit {
-            multiline: false,
-            digits_only: true,
-        },
-        b(256, 88, 80, 26),
-    )?;
-    let autostart = d.add(Control::Check("Start with Windows"), b(32, 122, 300, 26))?;
-    d.add(
-        Control::Label("Drag the popup in the picture to place it anywhere."),
+    let one_line_digits = EditStyle {
+        multiline: false,
+        digits_only: true,
+    };
+    let multiline = EditStyle {
+        multiline: true,
+        digits_only: false,
+    };
+    d.add_group("General", b(16, 16, 688, 196))?;
+    d.add_label("Popup position", b(32, 54, 216, 26))?;
+    let position = d.add_drop_down(b(256, 54, 180, 26))?;
+    d.add_label("Auto-skip after (seconds, 0 = off)", b(32, 88, 216, 26))?;
+    let auto_skip = d.add_edit(one_line_digits, b(256, 88, 80, 26))?;
+    let autostart = d.add_check("Start with Windows", b(32, 122, 300, 26))?;
+    d.add_label(
+        "Drag the popup in the picture to place it anywhere.",
         b(32, 168, 404, 26),
     )?;
     let (window_width, window_height) = POPUP_SIZE;
-    let place = d.add(
-        Control::Placement {
-            window_width,
-            window_height,
-        },
-        b(456, 46, 232, 156),
-    )?;
+    let place = d.add_placement_picker(window_width, window_height, b(456, 46, 232, 156))?;
 
-    d.add(Control::Group("Questions"), b(16, 228, 688, 332))?;
-    let list = d.add(Control::List, b(32, 266, 260, 236))?;
-    let add = d.add(
-        Control::Button {
-            text: "Add",
-            default: false,
-        },
-        b(32, 514, 124, 30),
-    )?;
-    let delete = d.add(
-        Control::Button {
-            text: "Delete",
-            default: false,
-        },
-        b(168, 514, 124, 30),
-    )?;
-    d.add(Control::Label("Question"), b(308, 262, 380, 20))?;
-    let text = d.add(
-        Control::Edit {
-            multiline: true,
-            digits_only: false,
-        },
-        b(308, 284, 380, 56),
-    )?;
-    d.add(
-        Control::Label("Choices (one per line)"),
-        b(308, 348, 380, 20),
-    )?;
-    let choices = d.add(
-        Control::Edit {
-            multiline: true,
-            digits_only: false,
-        },
-        b(308, 370, 380, 96),
-    )?;
-    d.add(Control::Label("Correct answer"), b(308, 474, 380, 20))?;
-    let answer = d.add(Control::DropDown, b(308, 496, 380, 26))?;
+    d.add_group("Questions", b(16, 228, 688, 332))?;
+    let list = d.add_list(b(32, 266, 260, 236))?;
+    let add = d.add_button("Add", b(32, 514, 124, 30))?;
+    let delete = d.add_button("Delete", b(168, 514, 124, 30))?;
+    d.add_label("Question", b(308, 262, 380, 20))?;
+    let text = d.add_edit(multiline, b(308, 284, 380, 56))?;
+    d.add_label("Choices (one per line)", b(308, 348, 380, 20))?;
+    let choices = d.add_edit(multiline, b(308, 370, 380, 96))?;
+    d.add_label("Correct answer", b(308, 474, 380, 20))?;
+    let answer = d.add_drop_down(b(308, 496, 380, 26))?;
 
-    let save = d.add(
-        Control::Button {
-            text: "Save",
-            default: true,
-        },
-        b(504, 574, 96, 30),
-    )?;
-    let cancel = d.add(
-        Control::Button {
-            text: "Cancel",
-            default: false,
-        },
-        b(608, 574, 96, 30),
-    )?;
+    let save = d.add_button("Save", b(504, 574, 96, 30))?;
+    let cancel = d.add_button("Cancel", b(608, 574, 96, 30))?;
     Ok((
         d,
         Ids {
@@ -296,12 +250,13 @@ impl Editor {
         self.current = index.filter(|&i| i < self.drafts.len());
         d.set_selected(self.ids.list, self.current);
         let editing = self.current.is_some();
-        for id in [
-            self.ids.text,
-            self.ids.choices,
-            self.ids.answer,
-            self.ids.delete,
-        ] {
+        let editors: [AnyId; 4] = [
+            self.ids.text.into(),
+            self.ids.choices.into(),
+            self.ids.answer.into(),
+            self.ids.delete.into(),
+        ];
+        for id in editors {
             d.set_enabled(id, editing);
         }
         match self.current {
@@ -324,7 +279,7 @@ impl Editor {
                 d.set_items(self.ids.answer, &draft.choices);
                 d.set_selected(self.ids.answer, draft.answer_index());
             }
-            None => d.set_items::<&str>(self.ids.answer, &[]),
+            None => d.set_items::<_, &str>(self.ids.answer, &[]),
         }
     }
 

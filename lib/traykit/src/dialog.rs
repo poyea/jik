@@ -7,6 +7,8 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::c_void;
+use std::fmt;
+use std::marker::PhantomData;
 
 use crate::error::{Call, Error, Result};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -143,7 +145,7 @@ impl Bounds {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Control<'a> {
+enum Control<'a> {
     Label(&'a str),
     /// A card with a heading. Add it before the controls that it holds.
     Group(&'a str),
@@ -154,10 +156,7 @@ pub enum Control<'a> {
     DropDown,
     List,
     Check(&'a str),
-    Button {
-        text: &'a str,
-        default: bool,
-    },
+    Button(&'a str),
     /// A picker for where a window shows on the primary monitor: a small copy of the work area
     /// with the window in it. The user drags the window, clicks a place, or uses the arrow keys.
     /// `window_width` and `window_height` are the window size at 100% display scale.
@@ -185,16 +184,137 @@ enum Surface {
     Card,
 }
 
+/// The kinds of controls. They are the type parameter of [`Id`], and they decide which
+/// [`Dialog`] methods an id can go to.
+pub mod kind {
+    /// A text that the user cannot change.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Label {}
+    /// A card with a heading, behind the controls that are on it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Group {}
+    /// A box for text, on one line or on many.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Edit {}
+    /// A closed list that opens when the user clicks it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum DropDown {}
+    /// An open list of items.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum List {}
+    /// A check box with a text.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Check {}
+    /// A push button.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Button {}
+    /// A picker for where a window shows on the screen. See [`Dialog::add_placement_picker`].
+    ///
+    /// [`Dialog::add_placement_picker`]: super::Dialog::add_placement_picker
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum PlacementPicker {}
+}
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for super::kind::Label {}
+    impl Sealed for super::kind::Edit {}
+    impl Sealed for super::kind::DropDown {}
+    impl Sealed for super::kind::List {}
+}
+
+/// The kinds of controls that show a text that the app can read and change.
+pub trait HasText: sealed::Sealed {}
+impl HasText for kind::Label {}
+impl HasText for kind::Edit {}
+
+/// The kinds of controls that hold a list of items, of which the user can select one.
+pub trait HasItems: sealed::Sealed {}
+impl HasItems for kind::DropDown {}
+impl HasItems for kind::List {}
+
+/// A control in a [`Dialog`]. The kind `K` decides which methods take it.
+pub struct Id<K> {
+    index: usize,
+    kind: PhantomData<fn() -> K>,
+}
+
+impl<K> Id<K> {
+    fn new(index: usize) -> Self {
+        Self {
+            index,
+            kind: PhantomData,
+        }
+    }
+}
+
+impl<K> Clone for Id<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<K> Copy for Id<K> {}
+
+impl<K> PartialEq for Id<K> {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+    }
+}
+
+impl<K> Eq for Id<K> {}
+
+impl<K> std::hash::Hash for Id<K> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.index.hash(state);
+    }
+}
+
+impl<K> fmt::Debug for Id<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Id({})", self.index)
+    }
+}
+
+/// A control of any kind, as an [`Event`] names it. Compare it with an [`Id`] of any kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ControlId(usize);
+pub struct AnyId(usize);
+
+impl<K> From<Id<K>> for AnyId {
+    fn from(id: Id<K>) -> Self {
+        AnyId(id.index)
+    }
+}
+
+impl<K> PartialEq<Id<K>> for AnyId {
+    fn eq(&self, other: &Id<K>) -> bool {
+        self.0 == other.index
+    }
+}
+
+impl<K> PartialEq<AnyId> for Id<K> {
+    fn eq(&self, other: &AnyId) -> bool {
+        self.index == other.0
+    }
+}
+
+/// How an edit box takes text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EditStyle {
+    /// The box has many lines. Enter starts a new line, and a scroll bar shows when the text
+    /// is longer than the box.
+    pub multiline: bool,
+    /// The box takes only the digits 0 to 9.
+    pub digits_only: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
     /// A button or a check box was clicked.
-    Clicked(ControlId),
+    Clicked(AnyId),
     /// The user changed the text of an edit box or the selection of a list.
     /// Changes made through [`Dialog`] methods do not send this event.
-    Changed(ControlId),
+    Changed(AnyId),
     /// The user pressed Enter outside a multiline edit box.
     Submit,
     /// The user pressed Esc or the close button.
@@ -506,7 +626,7 @@ impl Dialog {
         unsafe { &*self.shared }
     }
 
-    pub fn add(&mut self, control: Control, bounds: Bounds) -> Result<ControlId> {
+    fn add(&mut self, control: Control, bounds: Bounds) -> Result<usize> {
         let s = |v: i32| scaled(v, self.scale);
         let bounds = match control {
             Control::Group(_) => {
@@ -582,7 +702,7 @@ impl Dialog {
                 WINDOW_EX_STYLE(0),
             ),
             // The default button is not marked: Enter gives Event::Submit in any case.
-            Control::Button { text, .. } => (
+            Control::Button(text) => (
                 w!("BUTTON"),
                 text,
                 Kind::Button,
@@ -710,21 +830,84 @@ impl Dialog {
             }
         }
         self.controls.push(hwnd);
-        Ok(ControlId(index))
+        Ok(index)
     }
 
-    fn control(&self, id: ControlId) -> HWND {
-        self.controls[id.0]
+    /// Add a text that the user cannot change.
+    pub fn add_label(&mut self, text: &str, bounds: Bounds) -> Result<Id<kind::Label>> {
+        self.add(Control::Label(text), bounds).map(Id::new)
     }
 
-    fn kind(&self, id: ControlId) -> Kind {
-        self.shared().kinds.borrow()[id.0]
+    /// Add a card with a heading. Add it before the controls that go on it, and make it
+    /// contain their bounds: the controls then take the card color.
+    pub fn add_group(&mut self, heading: &str, bounds: Bounds) -> Result<Id<kind::Group>> {
+        self.add(Control::Group(heading), bounds).map(Id::new)
     }
 
-    fn send(&self, id: ControlId, msg: u32, wparam: usize, lparam: isize) -> isize {
+    /// Add an empty edit box.
+    pub fn add_edit(&mut self, style: EditStyle, bounds: Bounds) -> Result<Id<kind::Edit>> {
+        self.add(
+            Control::Edit {
+                multiline: style.multiline,
+                digits_only: style.digits_only,
+            },
+            bounds,
+        )
+        .map(Id::new)
+    }
+
+    /// Add an empty drop-down list. `bounds` is the size of the closed list.
+    pub fn add_drop_down(&mut self, bounds: Bounds) -> Result<Id<kind::DropDown>> {
+        self.add(Control::DropDown, bounds).map(Id::new)
+    }
+
+    /// Add an empty list.
+    pub fn add_list(&mut self, bounds: Bounds) -> Result<Id<kind::List>> {
+        self.add(Control::List, bounds).map(Id::new)
+    }
+
+    /// Add a check box that is not checked.
+    pub fn add_check(&mut self, text: &str, bounds: Bounds) -> Result<Id<kind::Check>> {
+        self.add(Control::Check(text), bounds).map(Id::new)
+    }
+
+    /// Add a push button. A click gives [`Event::Clicked`].
+    pub fn add_button(&mut self, text: &str, bounds: Bounds) -> Result<Id<kind::Button>> {
+        self.add(Control::Button(text), bounds).map(Id::new)
+    }
+
+    /// Add a picker for where a window shows on the primary monitor: a small copy of the
+    /// work area with the window in it. The user drags the window, clicks a place, or uses
+    /// the arrow keys. `window_width` and `window_height` are the window size at 100% display
+    /// scale. A change gives [`Event::Changed`].
+    pub fn add_placement_picker(
+        &mut self,
+        window_width: i32,
+        window_height: i32,
+        bounds: Bounds,
+    ) -> Result<Id<kind::PlacementPicker>> {
+        self.add(
+            Control::Placement {
+                window_width,
+                window_height,
+            },
+            bounds,
+        )
+        .map(Id::new)
+    }
+
+    fn control(&self, index: usize) -> HWND {
+        self.controls[index]
+    }
+
+    fn kind(&self, index: usize) -> Kind {
+        self.shared().kinds.borrow()[index]
+    }
+
+    fn send(&self, index: usize, msg: u32, wparam: usize, lparam: isize) -> isize {
         unsafe {
             SendMessageW(
-                self.control(id),
+                self.control(index),
                 msg,
                 Some(WPARAM(wparam)),
                 Some(LPARAM(lparam)),
@@ -741,9 +924,10 @@ impl Dialog {
         result
     }
 
-    pub fn text(&self, id: ControlId) -> String {
+    /// The text of a label or an edit box.
+    pub fn text<K: HasText>(&self, id: Id<K>) -> String {
         unsafe {
-            let hwnd = self.control(id);
+            let hwnd = self.control(id.index);
             let len = GetWindowTextLengthW(hwnd).max(0) as usize;
             let mut buf = vec![0u16; len + 1];
             let copied = GetWindowTextW(hwnd, &mut buf).max(0) as usize;
@@ -751,90 +935,95 @@ impl Dialog {
         }
     }
 
-    pub fn set_text(&self, id: ControlId, text: &str) {
+    /// Change the text of a label or an edit box. It does not give [`Event::Changed`].
+    /// A multiline edit box needs `"\r\n"` between lines.
+    pub fn set_text<K: HasText>(&self, id: Id<K>, text: &str) {
         self.quietly(|| unsafe {
-            let _ = SetWindowTextW(self.control(id), &HSTRING::from(text));
+            let _ = SetWindowTextW(self.control(id.index), &HSTRING::from(text));
         });
     }
 
-    pub fn set_items<S: AsRef<str>>(&self, id: ControlId, items: &[S]) {
-        let (reset, add) = match self.kind(id) {
+    /// Replace all items of a list or a drop-down. Then no item is selected.
+    pub fn set_items<K: HasItems, S: AsRef<str>>(&self, id: Id<K>, items: &[S]) {
+        let (reset, add) = match self.kind(id.index) {
             Kind::DropDown => (CB_RESETCONTENT, CB_ADDSTRING),
-            Kind::List => (LB_RESETCONTENT, LB_ADDSTRING),
-            _ => return,
+            _ => (LB_RESETCONTENT, LB_ADDSTRING),
         };
         self.quietly(|| {
-            self.send(id, reset, 0, 0);
+            self.send(id.index, reset, 0, 0);
             for item in items {
                 let text = HSTRING::from(item.as_ref());
-                self.send(id, add, 0, text.as_ptr() as isize);
+                self.send(id.index, add, 0, text.as_ptr() as isize);
             }
         });
     }
 
-    /// Replace one item of a list, and keep the selection.
-    pub fn set_item(&self, id: ControlId, index: usize, text: &str) {
-        if self.kind(id) != Kind::List {
-            return;
-        }
+    /// Replace the text of one item of a list, and keep the selection.
+    pub fn set_item(&self, id: Id<kind::List>, index: usize, text: &str) {
         let selected = self.selected(id);
         let text = HSTRING::from(text);
         self.quietly(|| {
-            self.send(id, LB_DELETESTRING, index, 0);
-            self.send(id, LB_INSERTSTRING, index, text.as_ptr() as isize);
+            self.send(id.index, LB_DELETESTRING, index, 0);
+            self.send(id.index, LB_INSERTSTRING, index, text.as_ptr() as isize);
         });
         self.set_selected(id, selected);
     }
 
-    pub fn selected(&self, id: ControlId) -> Option<usize> {
-        let get = match self.kind(id) {
+    /// The selected item of a list or a drop-down, if one is selected.
+    pub fn selected<K: HasItems>(&self, id: Id<K>) -> Option<usize> {
+        let get = match self.kind(id.index) {
             Kind::DropDown => CB_GETCURSEL,
-            Kind::List => LB_GETCURSEL,
-            _ => return None,
+            _ => LB_GETCURSEL,
         };
-        usize::try_from(self.send(id, get, 0, 0)).ok()
+        usize::try_from(self.send(id.index, get, 0, 0)).ok()
     }
 
-    pub fn set_selected(&self, id: ControlId, index: Option<usize>) {
-        let set = match self.kind(id) {
+    /// Select an item of a list or a drop-down, or none. It does not give [`Event::Changed`].
+    pub fn set_selected<K: HasItems>(&self, id: Id<K>, index: Option<usize>) {
+        let set = match self.kind(id.index) {
             Kind::DropDown => CB_SETCURSEL,
-            Kind::List => LB_SETCURSEL,
-            _ => return,
+            _ => LB_SETCURSEL,
         };
-        self.quietly(|| self.send(id, set, index.unwrap_or(usize::MAX), 0));
+        self.quietly(|| self.send(id.index, set, index.unwrap_or(usize::MAX), 0));
     }
 
-    pub fn checked(&self, id: ControlId) -> bool {
-        self.shared().checked.borrow()[id.0]
+    /// Whether a check box is checked.
+    pub fn checked(&self, id: Id<kind::Check>) -> bool {
+        self.shared().checked.borrow()[id.index]
     }
 
-    pub fn set_checked(&self, id: ControlId, checked: bool) {
-        self.shared().checked.borrow_mut()[id.0] = checked;
+    /// Check or clear a check box. It does not give [`Event::Clicked`].
+    pub fn set_checked(&self, id: Id<kind::Check>, checked: bool) {
+        self.shared().checked.borrow_mut()[id.index] = checked;
         unsafe {
-            let _ = InvalidateRect(Some(self.control(id)), None, false);
+            let _ = InvalidateRect(Some(self.control(id.index)), None, false);
         }
     }
 
-    pub fn placement(&self, id: ControlId) -> Placement {
-        self.shared().placements.borrow()[id.0]
+    /// The place that a placement picker shows.
+    pub fn placement(&self, id: Id<kind::PlacementPicker>) -> Placement {
+        self.shared().placements.borrow()[id.index]
     }
 
-    pub fn set_placement(&self, id: ControlId, placement: Placement) {
-        self.shared().placements.borrow_mut()[id.0] = placement;
+    /// Change the place that a placement picker shows. It does not give [`Event::Changed`].
+    pub fn set_placement(&self, id: Id<kind::PlacementPicker>, placement: Placement) {
+        self.shared().placements.borrow_mut()[id.index] = placement;
         unsafe {
-            let _ = InvalidateRect(Some(self.control(id)), None, false);
+            let _ = InvalidateRect(Some(self.control(id.index)), None, false);
         }
     }
 
-    pub fn set_enabled(&self, id: ControlId, enabled: bool) {
+    /// Let the user use a control, or show it in gray and ignore the user.
+    pub fn set_enabled(&self, id: impl Into<AnyId>, enabled: bool) {
         unsafe {
-            let _ = EnableWindow(self.control(id), enabled);
+            let _ = EnableWindow(self.control(id.into().0), enabled);
         }
     }
 
-    pub fn focus(&self, id: ControlId) {
+    /// Move the keyboard focus to a control.
+    pub fn focus(&self, id: impl Into<AnyId>) {
         unsafe {
-            let _ = SetFocus(Some(self.control(id)));
+            let _ = SetFocus(Some(self.control(id.into().0)));
         }
     }
 
@@ -858,11 +1047,10 @@ impl Dialog {
             let _ = ShowWindow(self.hwnd, SW_SHOWNORMAL);
             let _ = ShowWindow(self.hwnd, SW_SHOWNORMAL);
             let _ = SetForegroundWindow(self.hwnd);
-            if let Some(first) = (0..self.controls.len())
-                .map(ControlId)
-                .find(|&id| self.kind(id) != Kind::Static)
+            if let Some(first) =
+                (0..self.controls.len()).find(|&index| self.kind(index) != Kind::Static)
             {
-                self.focus(first);
+                self.focus(AnyId(first));
             }
             let mut msg = MSG::default();
             loop {
@@ -1499,7 +1687,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     _ if id >= FIRST_ID => {
                         let index = id - FIRST_ID;
                         let kind = shared.kinds.borrow().get(index).copied();
-                        let control = ControlId(index);
+                        let control = AnyId(index);
                         match (kind, code) {
                             (Some(Kind::Check), BN_CLICKED) => {
                                 if let Some(checked) = shared.checked.borrow_mut().get_mut(index) {
@@ -1755,7 +1943,7 @@ fn user_placement(shared: &Shared, index: usize, hwnd: HWND, placement: Placemen
         shared
             .events
             .borrow_mut()
-            .push_back(Event::Changed(ControlId(index)));
+            .push_back(Event::Changed(AnyId(index)));
     }
 }
 
