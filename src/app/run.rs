@@ -3,6 +3,7 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Local, Utc};
+use traykit::Ui;
 use traykit::presence::{self, Busy};
 
 use super::APP_NAME;
@@ -19,8 +20,13 @@ enum Pause {
     Indefinite,
 }
 
-pub fn run_tray<P: Popup>(mut session: Session<P>, mut config: Config, files: Files) -> Result<()> {
-    let mut tray = Tray::new()?;
+pub fn run_tray<P: Popup>(
+    ui: &Ui,
+    mut session: Session<P>,
+    mut config: Config,
+    files: Files,
+) -> Result<()> {
+    let mut tray = Tray::new(ui)?;
     let min_gap = chrono::Duration::from_std(session.schedule.config().min_gap)?;
     let mut earliest = Utc::now() + min_gap;
     let mut pause: Option<Pause> = None;
@@ -95,7 +101,7 @@ pub fn run_tray<P: Popup>(mut session: Session<P>, mut config: Config, files: Fi
             Wake::Command(Command::Settings) => {
                 tray.set_busy(true);
                 traykit::process::set_background(false);
-                let opened = settings::open(&files, &config, autostart, &session.questions);
+                let opened = settings::open(ui, &files, &config, autostart, &session.questions);
                 traykit::process::set_background(true);
                 tray.set_busy(false);
                 match opened {

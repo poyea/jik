@@ -7,9 +7,8 @@ use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::time::{Duration, Instant, SystemTime};
 
-use crate::error::{Call, Error, Result};
-use windows::System::DispatcherQueueController;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
+use crate::error::{Call, Result};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{
     D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
@@ -23,28 +22,24 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_USE_HOSTBACKDROPBRUSH, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
     DWMWCP_DONOTROUND, DWMWINDOWATTRIBUTE, DwmSetWindowAttribute,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::WinRT::{RO_INIT_SINGLETHREADED, RoInitialize};
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
-use windows::Win32::UI::HiDpi::{
-    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
-};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetMessageW,
     GetWindowLongPtrW, HWND_TOPMOST, IDC_ARROW, IDC_HAND, IsWindow, KillTimer, LoadCursorW,
-    MA_NOACTIVATE, MSG, PostMessageW, PostQuitMessage, RegisterClassExW, SPI_GETWORKAREA,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SetCursor, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW,
-    TranslateMessage, WM_DESTROY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
-    WM_NCDESTROY, WM_NULL, WM_SETCURSOR, WM_TIMER, WNDCLASSEXW, WS_EX_NOACTIVATE,
-    WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    MA_NOACTIVATE, MSG, PostMessageW, PostQuitMessage, SPI_GETWORKAREA, SW_SHOWNOACTIVATE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetCursor,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, TranslateMessage,
+    WM_DESTROY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCDESTROY,
+    WM_NULL, WM_SETCURSOR, WM_TIMER, WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 use windows::core::{BOOL, PCWSTR, w};
 use windows_numerics::Vector2;
 
+use crate::Ui;
 use crate::placement::{Placement, SCREEN_MARGIN};
 use crate::theme::Theme;
 use glass::{Graphics, Scene};
@@ -92,9 +87,8 @@ pub struct Reply {
 }
 
 pub struct ChoicePopup {
-    hinstance: HINSTANCE,
+    ui: Ui,
     placement: Placement,
-    _dispatcher: DispatcherQueueController,
 }
 
 fn primary_monitor_scale() -> f32 {
@@ -112,30 +106,19 @@ impl ChoicePopup {
         self.placement = placement;
     }
 
-    pub fn new(placement: Placement) -> Result<Self> {
-        unsafe {
-            let _ = RoInitialize(RO_INIT_SINGLETHREADED);
-            let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-
-            let hinstance: HINSTANCE = GetModuleHandleW(None).call("GetModuleHandleW")?.into();
-            let wc = WNDCLASSEXW {
-                cbSize: size_of::<WNDCLASSEXW>() as u32,
-                lpfnWndProc: Some(wndproc),
-                hInstance: hinstance,
-                hCursor: LoadCursorW(None, IDC_ARROW).call("LoadCursorW")?,
-                lpszClassName: CLASS_NAME,
-                ..Default::default()
-            };
-            if RegisterClassExW(&wc) == 0 {
-                return Err(Error::last("RegisterClassExW"));
-            }
-
-            Ok(Self {
-                hinstance,
-                placement,
-                _dispatcher: glass::dispatcher_queue()?,
-            })
-        }
+    pub fn new(ui: &Ui, placement: Placement) -> Result<Self> {
+        crate::register_class(&WNDCLASSEXW {
+            cbSize: size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(wndproc),
+            hInstance: ui.hinstance(),
+            hCursor: unsafe { LoadCursorW(None, IDC_ARROW) }.call("LoadCursorW")?,
+            lpszClassName: CLASS_NAME,
+            ..Default::default()
+        })?;
+        Ok(Self {
+            ui: ui.clone(),
+            placement,
+        })
     }
 
     /// With `auto_dismiss`, the dismiss button counts down the seconds. The count stops while the
@@ -199,7 +182,7 @@ impl ChoicePopup {
                 win_h,
                 None,
                 None,
-                Some(self.hinstance),
+                Some(self.ui.hinstance()),
                 None,
             )
             .call("CreateWindowExW")?;

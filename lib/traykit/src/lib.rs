@@ -13,16 +13,33 @@ pub mod presence;
 pub mod process;
 mod theme;
 pub mod tray;
+mod ui;
 
 pub use error::{Error, Result};
+pub use ui::Ui;
 
 use crate::error::Call;
-use windows::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, POINT};
+use windows::Win32::Foundation::{
+    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HANDLE, POINT,
+};
 use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForSystem, MDT_EFFECTIVE_DPI};
-use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+use windows::Win32::UI::WindowsAndMessaging::{
+    MB_ICONERROR, MB_OK, MessageBoxW, RegisterClassExW, WNDCLASSEXW,
+};
 use windows::core::HSTRING;
+
+/// Register a window class. A class stays registered until the process ends, so a second
+/// registration of the same class is not an error.
+pub(crate) fn register_class(class: &WNDCLASSEXW) -> Result<()> {
+    unsafe {
+        if RegisterClassExW(class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS {
+            return Err(Error::last("RegisterClassExW"));
+        }
+    }
+    Ok(())
+}
 
 /// The system DPI stays at its sign-in value. Read the DPI of the monitor each time a window
 /// opens, so a change of the display scale applies to the next window.

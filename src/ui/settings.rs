@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Result;
+use traykit::Ui;
 use traykit::dialog::{Bounds, Control, ControlId, Dialog, Event, Flow, Outcome};
 
 use crate::config_store::{Config, Position, Preset};
@@ -161,8 +162,8 @@ struct Ids {
     cancel: ControlId,
 }
 
-fn build_dialog() -> Result<(Dialog, Ids)> {
-    let mut d = Dialog::new(TITLE, 720, 620)?;
+fn build_dialog(ui: &Ui) -> Result<(Dialog, Ids)> {
+    let mut d = Dialog::new(ui, TITLE, 720, 620)?;
     let b = Bounds::new;
     d.add(Control::Group("General"), b(16, 16, 688, 196))?;
     d.add(Control::Label("Popup position"), b(32, 54, 216, 26))?;
@@ -421,8 +422,13 @@ impl Editor {
 }
 
 /// Show the settings window. It returns when the user saves or cancels.
-pub fn edit(config: &Config, autostart: bool, questions: &[Question]) -> Result<SettingsOutcome> {
-    let (mut dialog, ids) = build_dialog()?;
+pub fn edit(
+    ui: &Ui,
+    config: &Config,
+    autostart: bool,
+    questions: &[Question],
+) -> Result<SettingsOutcome> {
+    let (mut dialog, ids) = build_dialog(ui)?;
     let mut labels: Vec<&str> = Preset::ALL.iter().map(|p| p.label()).collect();
     labels.push(CUSTOM_POSITION);
     dialog.set_items(ids.position, &labels);

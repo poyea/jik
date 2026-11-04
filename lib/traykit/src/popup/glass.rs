@@ -6,7 +6,6 @@ use std::time::Duration;
 use crate::error::{Call, Result};
 use windows::Foundation::{Size, TimeSpan};
 use windows::Graphics::DirectX::{DirectXAlphaMode, DirectXPixelFormat};
-use windows::System::DispatcherQueueController;
 use windows::UI::Composition::Desktop::DesktopWindowTarget;
 use windows::UI::Composition::{
     CompositionDrawingSurface, CompositionGraphicsDevice, Compositor, ContainerVisual,
@@ -32,25 +31,10 @@ use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::System::WinRT::Composition::{
     ICompositionDrawingSurfaceInterop, ICompositorDesktopInterop, ICompositorInterop,
 };
-use windows::Win32::System::WinRT::{
-    CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT, DispatcherQueueOptions,
-};
 use windows::core::{HSTRING, Interface, w};
 use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::theme::{Theme, rgba};
-
-/// Composition needs a dispatcher queue on the thread. A thread can have only one.
-pub fn dispatcher_queue() -> Result<DispatcherQueueController> {
-    unsafe {
-        CreateDispatcherQueueController(DispatcherQueueOptions {
-            dwSize: size_of::<DispatcherQueueOptions>() as u32,
-            threadType: DQTYPE_THREAD_CURRENT,
-            apartmentType: DQTAT_COM_STA,
-        })
-        .call("CreateDispatcherQueueController")
-    }
-}
 
 /// The GPU devices. Keep them only while a popup shows, because they use much memory.
 pub struct Graphics {

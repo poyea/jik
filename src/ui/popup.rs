@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
+use traykit::Ui;
 use traykit::placement::Placement;
 use traykit::popup::{ChoicePopup, Response};
 
@@ -38,9 +39,9 @@ pub struct GlassPopup {
 }
 
 impl GlassPopup {
-    pub fn new(config: &PopupConfig) -> Result<Self> {
+    pub fn new(ui: &Ui, config: &PopupConfig) -> Result<Self> {
         Ok(Self {
-            popup: ChoicePopup::new(placement(config.position))?,
+            popup: ChoicePopup::new(ui, placement(config.position))?,
             auto_skip: config.auto_skip(),
         })
     }

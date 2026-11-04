@@ -69,6 +69,7 @@ fn run() -> Result<()> {
         bail!("jik is already running. Use its tray icon, or quit it first.");
     };
 
+    let ui = traykit::Ui::new()?;
     let dir = app_dir()?;
     let files = Files {
         config: dir.join(CONFIG_FILE),
@@ -86,7 +87,7 @@ fn run() -> Result<()> {
     if mode == Mode::Settings {
         let autostart = traykit::autostart::is_enabled(app::APP_NAME);
         if let Opened::Saved(edited) =
-            app::open_settings(&files, &settings.config, autostart, &questions)?
+            app::open_settings(&ui, &files, &settings.config, autostart, &questions)?
             && edited.autostart != autostart
         {
             app::set_autostart(edited.autostart)?;
@@ -105,7 +106,7 @@ fn run() -> Result<()> {
         questions,
         schedule,
         store: AnswerStore::new(dir.join(ANSWERS_FILE)),
-        popup: GlassPopup::new(&settings.config.popup)?,
+        popup: GlassPopup::new(&ui, &settings.config.popup)?,
         rng: fastrand::Rng::new(),
     };
 
@@ -114,7 +115,7 @@ fn run() -> Result<()> {
         session.ask_next()?;
         Ok(())
     } else {
-        app::run_tray(session, settings.config, files)
+        app::run_tray(&ui, session, settings.config, files)
     }
 }
 

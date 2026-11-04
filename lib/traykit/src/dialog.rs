@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 use std::ffi::c_void;
 
 use crate::error::{Call, Error, Result};
-use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D_RECT_F, D2D1_ALPHA_MODE_IGNORE, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
 };
@@ -36,11 +36,9 @@ use windows::Win32::Graphics::Gdi::{
     HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect, OUT_DEFAULT_PRECIS, PAINTSTRUCT, ReleaseDC,
     SelectObject, SetBkColor, SetTextColor,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{
-    DRAWITEMSTRUCT, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx,
-    MEASUREITEMSTRUCT, ODS_COMBOBOXEDIT, ODS_DISABLED, ODS_FOCUS, ODS_NOFOCUSRECT, ODS_SELECTED,
-    ODT_BUTTON, ODT_COMBOBOX, ODT_LISTBOX, SetWindowTheme, WM_MOUSELEAVE,
+    DRAWITEMSTRUCT, MEASUREITEMSTRUCT, ODS_COMBOBOXEDIT, ODS_DISABLED, ODS_FOCUS, ODS_NOFOCUSRECT,
+    ODS_SELECTED, ODT_BUTTON, ODT_COMBOBOX, ODT_LISTBOX, SetWindowTheme, WM_MOUSELEAVE,
 };
 use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -58,7 +56,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsDialogMessageW, LB_ADDSTRING, LB_DELETESTRING, LB_GETCURSEL, LB_GETTEXT, LB_GETTEXTLEN,
     LB_INSERTSTRING, LB_RESETCONTENT, LB_SETCURSEL, LBS_HASSTRINGS, LBS_NOINTEGRALHEIGHT,
     LBS_NOTIFY, LBS_OWNERDRAWFIXED, LoadCursorW, MB_ICONWARNING, MB_OK, MSG, MessageBoxW,
-    PostQuitMessage, RegisterClassExW, SPI_GETWORKAREA, SW_SHOWNORMAL, SWP_NOSIZE, SWP_NOZORDER,
+    PostQuitMessage, SPI_GETWORKAREA, SW_SHOWNORMAL, SWP_NOSIZE, SWP_NOZORDER,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
     SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW, TranslateMessage,
     WINDOW_EX_STYLE, WINDOW_STYLE, WM_CAPTURECHANGED, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT,
@@ -71,6 +69,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{HSTRING, PCWSTR, w};
 use windows_numerics::Vector2;
 
+use crate::Ui;
 use crate::placement::{Area, Placement, SCREEN_MARGIN};
 use crate::theme::{Theme, colorref, over, rgba};
 
@@ -389,6 +388,7 @@ impl Shared {
 }
 
 pub struct Dialog {
+    _ui: Ui,
     hwnd: HWND,
     font: HFONT,
     heading_font: HFONT,
@@ -400,31 +400,25 @@ pub struct Dialog {
 impl Dialog {
     /// `width` and `height` are the client size at 100% display scale.
     /// The colors follow the Windows light or dark app mode, as the popup does.
-    pub fn new(title: &str, width: i32, height: i32) -> Result<Self> {
+    pub fn new(ui: &Ui, title: &str, width: i32, height: i32) -> Result<Self> {
+        let hinstance = ui.hinstance();
         unsafe {
-            let _ = InitCommonControlsEx(&INITCOMMONCONTROLSEX {
-                dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
-                dwICC: ICC_STANDARD_CLASSES,
-            });
-            let hinstance: HINSTANCE = GetModuleHandleW(None).call("GetModuleHandleW")?.into();
-            let wc = WNDCLASSEXW {
+            crate::register_class(&WNDCLASSEXW {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
                 lpfnWndProc: Some(wndproc),
                 hInstance: hinstance,
                 hCursor: LoadCursorW(None, IDC_ARROW).call("LoadCursorW")?,
                 lpszClassName: CLASS_NAME,
                 ..Default::default()
-            };
-            // The classes stay registered after the first dialog, so a second registration fails.
-            RegisterClassExW(&wc);
-            RegisterClassExW(&WNDCLASSEXW {
+            })?;
+            crate::register_class(&WNDCLASSEXW {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
                 lpfnWndProc: Some(placement_proc),
                 hInstance: hinstance,
                 hCursor: LoadCursorW(None, IDC_SIZEALL).call("LoadCursorW")?,
                 lpszClassName: PLACEMENT_CLASS,
                 ..Default::default()
-            });
+            })?;
 
             let dpi = crate::primary_monitor_dpi();
             let scale = dpi as f32 / 96.0;
@@ -497,6 +491,7 @@ impl Dialog {
             }
 
             Ok(Self {
+                _ui: ui.clone(),
                 hwnd,
                 font: ui_font(scale, FW_NORMAL.0 as i32),
                 heading_font: ui_font(scale, FW_SEMIBOLD.0 as i32),

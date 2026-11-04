@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use traykit::Ui;
 use traykit::tray::{self, IconImage, MenuItem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,9 +48,9 @@ pub struct Tray {
 }
 
 impl Tray {
-    pub fn new() -> Result<Self> {
+    pub fn new(ui: &Ui) -> Result<Self> {
         Ok(Self {
-            inner: tray::Tray::new("jik", &app_icon(tray::icon_size()))?,
+            inner: tray::Tray::new(ui, "jik", &app_icon(tray::icon_size()))?,
             state: MenuState::default(),
         })
     }

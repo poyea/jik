@@ -6,15 +6,14 @@ use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::Ui;
 use crate::error::{Call, Error, Result};
-use windows::Win32::Foundation::{
-    CloseHandle, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, TRUE, WPARAM,
-};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, POINT, TRUE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS,
     DeleteObject,
 };
-use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
+use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::RemoteDesktop::{
     NOTIFY_FOR_THIS_SESSION, WTSRegisterSessionNotification, WTSUnRegisterSessionNotification,
 };
@@ -30,10 +29,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos, GetSystemMetrics, HICON, HMENU,
     ICONINFO, MENU_ITEM_FLAGS, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG,
     MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE, PeekMessageW, PostMessageW,
-    PostQuitMessage, QS_ALLINPUT, RegisterClassExW, RegisterWindowMessageW, SM_CXSMICON,
-    SetForegroundWindow, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTALIGN,
-    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_LBUTTONUP, WM_NULL, WM_QUIT,
-    WM_RBUTTONUP, WNDCLASSEXW, WS_EX_TOOLWINDOW, WS_POPUP,
+    PostQuitMessage, QS_ALLINPUT, RegisterWindowMessageW, SM_CXSMICON, SetForegroundWindow,
+    TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateMessage, WM_APP, WM_LBUTTONUP, WM_NULL, WM_QUIT, WM_RBUTTONUP, WNDCLASSEXW,
+    WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{BOOL, HSTRING, PCSTR, PCWSTR, w};
 
@@ -149,26 +148,24 @@ impl Drop for DeadlineTimer {
 }
 
 pub struct Tray {
+    _ui: Ui,
     hwnd: HWND,
     icon: HICON,
     timer: DeadlineTimer,
 }
 
 impl Tray {
-    pub fn new(tooltip: &str, icon: &IconImage) -> Result<Self> {
+    pub fn new(ui: &Ui, tooltip: &str, icon: &IconImage) -> Result<Self> {
         let timer = DeadlineTimer::new()?;
+        let hinstance = ui.hinstance();
+        crate::register_class(&WNDCLASSEXW {
+            cbSize: size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(wndproc),
+            hInstance: hinstance,
+            lpszClassName: CLASS_NAME,
+            ..Default::default()
+        })?;
         unsafe {
-            let hinstance: HINSTANCE = GetModuleHandleW(None).call("GetModuleHandleW")?.into();
-            let wc = WNDCLASSEXW {
-                cbSize: size_of::<WNDCLASSEXW>() as u32,
-                lpfnWndProc: Some(wndproc),
-                hInstance: hinstance,
-                lpszClassName: CLASS_NAME,
-                ..Default::default()
-            };
-            if RegisterClassExW(&wc) == 0 {
-                return Err(Error::last("RegisterClassExW(tray)"));
-            }
             // Use a hidden top-level window, not a message-only window.
             // Only a top-level window gets the TaskbarCreated message when Explorer restarts.
             let hwnd = CreateWindowExW(
@@ -216,7 +213,12 @@ impl Tray {
                 let _ = DestroyWindow(hwnd);
                 return Err(Error::TrayIconNotAdded);
             }
-            Ok(Self { hwnd, icon, timer })
+            Ok(Self {
+                _ui: ui.clone(),
+                hwnd,
+                icon,
+                timer,
+            })
         }
     }
 

@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use traykit::Ui;
 
 use super::APP_NAME;
 use crate::config_store::{Config, save_config};
@@ -23,12 +24,13 @@ pub enum Opened {
 
 /// Show the settings window. If the user saves, write `config.toml` and `questions.toml`.
 pub fn open(
+    ui: &Ui,
     files: &Files,
     config: &Config,
     autostart: bool,
     current: &[Question],
 ) -> Result<Opened> {
-    match settings::edit(config, autostart, current)? {
+    match settings::edit(ui, config, autostart, current)? {
         SettingsOutcome::Cancelled => Ok(Opened::Unchanged),
         SettingsOutcome::Quit => Ok(Opened::Quit),
         SettingsOutcome::Saved(edited) => {
