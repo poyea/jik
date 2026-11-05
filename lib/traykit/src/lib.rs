@@ -74,6 +74,9 @@
 //! [`ChoicePopup::ask`]: popup::ChoicePopup::ask
 //! [`Dialog::run`]: dialog::Dialog::run
 
+#[cfg(not(windows))]
+compile_error!("traykit works only on Windows: it uses the Win32 and Windows Runtime APIs.");
+
 pub mod autostart;
 pub mod dialog;
 pub mod error;

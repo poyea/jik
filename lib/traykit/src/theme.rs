@@ -1,7 +1,7 @@
 // Copyright (c) 2026 John Law
 // SPDX-License-Identifier: MIT
 
-//! The colors of all jik windows. They follow the Windows light or dark app mode.
+//! The colors of all traykit windows. They follow the Windows light or dark app mode.
 
 use windows::UI::Color;
 use windows::Win32::Foundation::COLORREF;
