@@ -1,16 +1,16 @@
 [package]
-name = "traykit"
+name = "glasskit"
 version = "0.1.0"
 edition.workspace = true
 rust-version = "1.88"
 authors.workspace = true
-description = "Building blocks for small Windows tray apps: tray icon and menu, glass popup, dialogs, autostart."
+description = "Native Windows UI with a glass look: tray icon and menu, glass popup, themed dialogs, and helpers for tray apps."
 include = ["src/**/*", "examples/**/*", "README.md", "LICENSE"]
 license = "MIT"
 readme = "README.md"
 repository.workspace = true
 homepage.workspace = true
-documentation = "https://docs.rs/traykit"
+documentation = "https://docs.rs/glasskit"
 keywords = ["windows", "win32", "tray", "popup", "acrylic"]
 categories = ["gui", "os::windows-apis"]
 

@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use traykit::Ui;
+use glasskit::Ui;
 
 use super::APP_NAME;
 use crate::config_store::{Config, load_config, save_config};
@@ -37,7 +37,7 @@ pub fn open(
     let (config, current) = match read_files(files) {
         Ok(on_disk) => on_disk,
         Err(err) => {
-            traykit::show_error(
+            glasskit::show_error(
                 APP_NAME,
                 &format!(
                     "{err:#}
@@ -67,7 +67,7 @@ fn read_files(files: &Files) -> Result<(Config, Vec<Question>)> {
 }
 
 pub fn set_autostart(enabled: bool) -> Result<()> {
-    traykit::autostart::set_enabled(APP_NAME, enabled)
+    glasskit::autostart::set_enabled(APP_NAME, enabled)
         .context("could not change Start with Windows")
 }
 

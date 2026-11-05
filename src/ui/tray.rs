@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use traykit::Ui;
-use traykit::tray::{self, Icon, MenuItem};
+use glasskit::Ui;
+use glasskit::tray::{self, Icon, MenuItem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
@@ -96,7 +96,7 @@ fn menu_items(state: &MenuState) -> Vec<MenuItem<Command>> {
     ]
 }
 
-fn app_icon(size: u32) -> traykit::Result<Icon> {
+fn app_icon(size: u32) -> glasskit::Result<Icon> {
     let center = size as f32 / 2.0;
     let petal_r = size as f32 * 0.46;
     let seed_r = size as f32 * 0.16;

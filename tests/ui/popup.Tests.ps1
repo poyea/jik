@@ -11,7 +11,7 @@ function Test-SkipIsRecorded {
     $jik = $null
     try {
         $jik = Start-Jik $dir @('--once')
-        $popup = Wait-JikWindow $jik 'TraykitChoicePopup'
+        $popup = Wait-JikWindow $jik 'GlasskitChoicePopup'
         Start-Sleep -Milliseconds 500
         Save-JikScreenshot 'popup-1-question' $popup -FromScreen
 
@@ -36,7 +36,7 @@ function Test-AnswerShowsTheResult {
     $jik = $null
     try {
         $jik = Start-Jik $dir @('--once')
-        $popup = Wait-JikWindow $jik 'TraykitChoicePopup'
+        $popup = Wait-JikWindow $jik 'GlasskitChoicePopup'
         Start-Sleep -Milliseconds 500
 
         # The first question of the sample is on one line, so the first choice (Berlin) starts
@@ -66,7 +66,7 @@ function Test-AutoSkipTimesOut {
         # A short countdown, so the test does not wait 30 seconds.
         Set-Content -Path (Join-Path $dir 'config.toml') -Value "[popup]`r`nauto_skip_seconds = 2"
         $jik = Start-Jik $dir @('--once')
-        $popup = Wait-JikWindow $jik 'TraykitChoicePopup'
+        $popup = Wait-JikWindow $jik 'GlasskitChoicePopup'
         $clock = [Diagnostics.Stopwatch]::StartNew()
         Start-Sleep -Milliseconds 500
         Save-JikScreenshot 'popup-3-countdown' $popup -FromScreen
@@ -126,7 +126,7 @@ function Test-WaitsWhileFullScreen {
         $clock = [Diagnostics.Stopwatch]::StartNew()
         while ($clock.ElapsedMilliseconds -lt 6000) {
             [System.Windows.Forms.Application]::DoEvents()
-            $popup = Find-JikWindow $jik 'TraykitChoicePopup'
+            $popup = Find-JikWindow $jik 'GlasskitChoicePopup'
             Assert-True ($popup -eq [IntPtr]::Zero) "no popup over the full-screen window ($($clock.ElapsedMilliseconds) ms)"
             Assert-True (-not $jik.HasExited) 'jik keeps running'
             Start-Sleep -Milliseconds 100
@@ -135,7 +135,7 @@ function Test-WaitsWhileFullScreen {
         Save-JikScreenshot 'popup-4-held-while-full-screen'
         $screen.Close()
         $screen = $null
-        $popup = Wait-JikWindow $jik 'TraykitChoicePopup' 10000
+        $popup = Wait-JikWindow $jik 'GlasskitChoicePopup' 10000
         Start-Sleep -Milliseconds 500
         Save-JikScreenshot 'popup-5-shown-after-full-screen'
         $client = Get-JikClientSize $popup

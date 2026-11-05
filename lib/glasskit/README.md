@@ -1,6 +1,6 @@
-# traykit
+# glasskit
 
-Building blocks for small Windows tray apps, in Rust.
+Native Windows UI with a glass look, in Rust: a tray icon and menu, a frosted-glass popup, themed dialogs, and helpers for tray apps.
 
 - **Tray**: an icon in the notification area with a menu of your own commands, and a wait loop that sleeps until a command, a deadline, or an unlock of the session.
 - **Popup**: a frosted-glass popup with a question and choice buttons. It fades in without taking the keyboard focus, can show whether a choice was correct, and can dismiss itself after a countdown.
@@ -12,17 +12,17 @@ All windows follow the Windows light or dark mode and the display scale.
 ## Example
 
 ```rust,no_run
-use traykit::Ui;
-use traykit::placement::Placement;
-use traykit::popup::{ChoicePopup, Prompt};
-use traykit::tray::{Icon, MenuItem, Tray, Wake};
+use glasskit::Ui;
+use glasskit::placement::Placement;
+use glasskit::popup::{ChoicePopup, Prompt};
+use glasskit::tray::{Icon, MenuItem, Tray, Wake};
 
 #[derive(Clone)]
 enum Command {
     Ask,
 }
 
-fn main() -> traykit::Result<()> {
+fn main() -> glasskit::Result<()> {
     let ui = Ui::new()?;
     let size = Icon::tray_size();
     let icon = Icon::from_argb(size, vec![0xFF2E_86DE; (size * size) as usize])?;
@@ -44,7 +44,7 @@ fn main() -> traykit::Result<()> {
 }
 ```
 
-A longer example, a small quiz app, is in `examples/quiz.rs`: `cargo run -p traykit --example quiz`.
+A longer example, a small quiz app, is in `examples/quiz.rs`: `cargo run -p glasskit --example quiz`.
 
 ## Requirements
 

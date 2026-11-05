@@ -3,21 +3,21 @@
 
 //! A tray app that asks a question each minute and on "Ask now".
 //!
-//! Run it with `cargo run -p traykit --example quiz`.
+//! Run it with `cargo run -p glasskit --example quiz`.
 
 use std::time::{Duration, SystemTime};
 
-use traykit::Ui;
-use traykit::placement::Placement;
-use traykit::popup::{ChoicePopup, Prompt, Response};
-use traykit::tray::{Icon, MenuItem, Tray, Wake};
+use glasskit::Ui;
+use glasskit::placement::Placement;
+use glasskit::popup::{ChoicePopup, Prompt, Response};
+use glasskit::tray::{Icon, MenuItem, Tray, Wake};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
     AskNow,
 }
 
-fn main() -> traykit::Result<()> {
+fn main() -> glasskit::Result<()> {
     let ui = Ui::new()?;
     let size = Icon::tray_size();
     let icon = Icon::from_argb(size, vec![0xFF2E_86DE; (size * size) as usize])?;

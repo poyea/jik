@@ -3,7 +3,8 @@
 
 #![warn(missing_docs)]
 
-//! Building blocks for small Windows tray apps.
+//! Native Windows UI with a glass look: a tray icon and menu, a frosted-glass popup, themed
+//! dialogs, and helpers for tray apps.
 //!
 //! - [`tray`]: an icon in the notification area with a menu, and [`Tray::wait`], the main
 //!   loop of the app. It sleeps until a menu command, a deadline, or an unlock of the session.
@@ -31,17 +32,17 @@
 //! ```no_run
 //! use std::time::{Duration, SystemTime};
 //!
-//! use traykit::Ui;
-//! use traykit::placement::Placement;
-//! use traykit::popup::{ChoicePopup, Prompt, Response};
-//! use traykit::tray::{Icon, MenuItem, Tray, Wake};
+//! use glasskit::Ui;
+//! use glasskit::placement::Placement;
+//! use glasskit::popup::{ChoicePopup, Prompt, Response};
+//! use glasskit::tray::{Icon, MenuItem, Tray, Wake};
 //!
 //! #[derive(Debug, Clone, PartialEq, Eq)]
 //! enum Command {
 //!     AskNow,
 //! }
 //!
-//! fn main() -> traykit::Result<()> {
+//! fn main() -> glasskit::Result<()> {
 //!     let ui = Ui::new()?;
 //!     let size = Icon::tray_size();
 //!     let icon = Icon::from_argb(size, vec![0xFF2E_86DE; (size * size) as usize])?;
@@ -75,7 +76,7 @@
 //! [`Dialog::run`]: dialog::Dialog::run
 
 #[cfg(not(windows))]
-compile_error!("traykit works only on Windows: it uses the Win32 and Windows Runtime APIs.");
+compile_error!("glasskit works only on Windows: it uses the Win32 and Windows Runtime APIs.");
 
 pub mod autostart;
 pub mod dialog;

@@ -42,7 +42,7 @@ use windows::core::{BOOL, HSTRING, PCSTR, PCWSTR, w};
 use crate::Ui;
 use crate::error::{Call, Error, Result};
 
-const CLASS_NAME: PCWSTR = w!("TraykitTray");
+const CLASS_NAME: PCWSTR = w!("GlasskitTray");
 const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
 const WTS_SESSION_UNLOCK: usize = 0x8;
 /// The numbers of the uxtheme.dll exports for dark menus. They have no names.

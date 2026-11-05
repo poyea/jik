@@ -5,9 +5,9 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use traykit::Ui;
-use traykit::placement::Placement;
-use traykit::popup::{ChoicePopup, Prompt, Response};
+use glasskit::Ui;
+use glasskit::placement::Placement;
+use glasskit::popup::{ChoicePopup, Prompt, Response};
 
 use crate::config_store::{PopupConfig, Position};
 use crate::study::questions::Question;

@@ -1,17 +1,17 @@
 // Copyright (c) 2026 John Law
 // SPDX-License-Identifier: MIT
 
-//! The error type of `traykit`.
+//! The error type of `glasskit`.
 
 use std::fmt;
 
-/// An error from `traykit`.
+/// An error from `glasskit`.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
     /// A Windows API call failed.
     Windows {
-        /// The Windows function that failed, or what `traykit` was doing, for example
+        /// The Windows function that failed, or what `glasskit` was doing, for example
         /// `CreateWindowExW` or `drawing the popup`.
         context: &'static str,
         /// The error that Windows gave.

@@ -3,8 +3,8 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Local, Utc};
-use traykit::Ui;
-use traykit::presence::{self, Busy};
+use glasskit::Ui;
+use glasskit::presence::{self, Busy};
 
 use super::APP_NAME;
 use super::session::{Asked, Session};
@@ -32,8 +32,8 @@ pub fn run_tray<P: Popup>(
     let mut pause: Option<Pause> = None;
     // A due question that waits because the user cannot see it now: why, and the next check.
     let mut held: Option<(Busy, DateTime<Utc>)> = None;
-    let mut autostart = traykit::autostart::is_enabled(APP_NAME);
-    traykit::process::set_efficiency_mode(true);
+    let mut autostart = glasskit::autostart::is_enabled(APP_NAME);
+    glasskit::process::set_efficiency_mode(true);
 
     loop {
         let now = Utc::now();
@@ -100,9 +100,9 @@ pub fn run_tray<P: Popup>(
             }
             Wake::Command(Command::Settings) => {
                 tray.set_busy(true);
-                traykit::process::set_efficiency_mode(false);
+                glasskit::process::set_efficiency_mode(false);
                 let opened = settings::open(ui, &files, &config, autostart, &session.questions);
-                traykit::process::set_efficiency_mode(true);
+                glasskit::process::set_efficiency_mode(true);
                 tray.set_busy(false);
                 match opened {
                     Ok(Opened::Saved(edited)) => {
@@ -130,9 +130,9 @@ pub fn run_tray<P: Popup>(
 
         if ask_now {
             tray.set_busy(true);
-            traykit::process::set_efficiency_mode(false);
+            glasskit::process::set_efficiency_mode(false);
             let asked = session.ask_next();
-            traykit::process::set_efficiency_mode(true);
+            glasskit::process::set_efficiency_mode(true);
             tray.set_busy(false);
             match asked {
                 Ok(Asked::Quit) => return Ok(()),
@@ -159,7 +159,7 @@ fn retry(busy: Busy, config: &ScheduleConfig) -> chrono::Duration {
 fn report(err: &anyhow::Error) {
     let message = format!("{err:#}");
     eprintln!("error: {message}");
-    traykit::show_error(APP_NAME, &message);
+    glasskit::show_error(APP_NAME, &message);
 }
 
 fn status_text(

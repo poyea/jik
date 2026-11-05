@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Result;
-use traykit::Ui;
-use traykit::dialog::{AnyId, Bounds, Dialog, EditStyle, Event, Flow, Id, Outcome, kind};
+use glasskit::Ui;
+use glasskit::dialog::{AnyId, Bounds, Dialog, EditStyle, Event, Flow, Id, Outcome, kind};
 
 use crate::config_store::{Config, Position, Preset};
 use crate::study::questions::{self, Question};

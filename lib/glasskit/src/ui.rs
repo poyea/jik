@@ -1,7 +1,7 @@
 // Copyright (c) 2026 John Law
 // SPDX-License-Identifier: MIT
 
-//! The setup that all `traykit` windows of a thread share.
+//! The setup that all `glasskit` windows of a thread share.
 
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -31,7 +31,7 @@ struct Inner {
     _dispatcher: DispatcherQueueController,
 }
 
-/// Proof that the current thread is set up for `traykit` windows.
+/// Proof that the current thread is set up for `glasskit` windows.
 ///
 /// Create it once, on the thread that shows the windows, and give it to [`Tray::new`],
 /// [`ChoicePopup::new`], and [`Dialog::new`]. Each of them keeps a copy, so the setup stays
