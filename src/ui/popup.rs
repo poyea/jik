@@ -7,7 +7,7 @@ use anyhow::Result;
 use chrono::{DateTime, Local};
 use traykit::Ui;
 use traykit::placement::Placement;
-use traykit::popup::{ChoicePopup, Response};
+use traykit::popup::{ChoicePopup, Prompt, Response};
 
 use crate::config_store::{PopupConfig, Position};
 use crate::study::questions::Question;
@@ -54,13 +54,11 @@ impl Popup for GlassPopup {
     }
 
     fn ask(&mut self, question: &Question) -> Result<PopupReply> {
-        let reply = self.popup.ask(
-            &question.text,
-            &question.choices,
-            Some(question.correct_index()),
-            "Skip",
-            self.auto_skip,
-        )?;
+        let prompt = Prompt::new(&question.text, question.choices.iter().map(String::as_str))
+            .correct(question.correct_index())
+            .dismiss_label("Skip")
+            .auto_dismiss(self.auto_skip);
+        let reply = self.popup.ask(&prompt)?;
         let result = match reply.response {
             Response::Choice(i) => PopupResult::Answered(i),
             Response::Dismissed => PopupResult::Skipped,

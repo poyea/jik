@@ -86,6 +86,54 @@ pub struct Reply {
     pub at: SystemTime,
 }
 
+/// What a [`ChoicePopup`] asks: a text, the choices, and how the popup ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Prompt<'a> {
+    text: &'a str,
+    choices: Vec<&'a str>,
+    correct: Option<usize>,
+    dismiss: &'a str,
+    auto_dismiss: Option<Duration>,
+}
+
+impl<'a> Prompt<'a> {
+    /// A prompt with this text and these choices, one button for each. The dismiss button
+    /// says "Dismiss", there is no correct choice, and the popup stays until the user clicks.
+    pub fn new(text: &'a str, choices: impl IntoIterator<Item = &'a str>) -> Self {
+        Self {
+            text,
+            choices: choices.into_iter().collect(),
+            correct: None,
+            dismiss: "Dismiss",
+            auto_dismiss: None,
+        }
+    }
+
+    /// Show the result of a click: the choice at `index` becomes green, and a wrong selected
+    /// choice becomes red. Then the popup fades out. An index out of range is ignored.
+    #[must_use]
+    pub fn correct(mut self, index: usize) -> Self {
+        self.correct = Some(index);
+        self
+    }
+
+    /// The text of the dismiss button.
+    #[must_use]
+    pub fn dismiss_label(mut self, label: &'a str) -> Self {
+        self.dismiss = label;
+        self
+    }
+
+    /// With `Some(after)`, the dismiss button counts down the seconds. The count stops while
+    /// the pointer is on the popup. At zero, the popup fades out and gives
+    /// [`Response::TimedOut`]. `None` turns the countdown off.
+    #[must_use]
+    pub fn auto_dismiss(mut self, after: Option<Duration>) -> Self {
+        self.auto_dismiss = after;
+        self
+    }
+}
+
 pub struct ChoicePopup {
     ui: Ui,
     placement: Placement,
@@ -121,20 +169,15 @@ impl ChoicePopup {
         })
     }
 
-    /// With `auto_dismiss`, the dismiss button counts down the seconds. The count stops while the
-    /// pointer is on the popup. At zero, the popup fades out and gives [`Response::TimedOut`].
-    ///
-    /// With `correct`, a click on a choice shows the result: the correct choice becomes green,
-    /// and a wrong selected choice becomes red. The popup then fades out. Without `correct`, and
-    /// for the dismiss button, a click closes the popup immediately.
-    pub fn ask<S: AsRef<str>>(
-        &mut self,
-        prompt: &str,
-        choices: &[S],
-        correct: Option<usize>,
-        dismiss: &str,
-        auto_dismiss: Option<Duration>,
-    ) -> Result<Reply> {
+    /// Show the prompt and wait until it ends: the user clicks a choice or the dismiss button,
+    /// the countdown ends, or the thread gets `WM_QUIT`. A click on the dismiss button, or on a
+    /// choice of a prompt without a correct choice, closes the popup immediately.
+    pub fn ask(&mut self, request: &Prompt) -> Result<Reply> {
+        let prompt = request.text;
+        let choices: &[&str] = &request.choices;
+        let correct = request.correct;
+        let dismiss = request.dismiss;
+        let auto_dismiss = request.auto_dismiss;
         let scale = primary_monitor_scale();
         let gfx = Graphics::new()?;
         let fonts = Fonts {
@@ -686,5 +729,30 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_has_quiet_defaults() {
+        let p = Prompt::new("Q?", ["a", "b"]);
+        assert_eq!(p.choices, ["a", "b"]);
+        assert_eq!(p.correct, None);
+        assert_eq!(p.dismiss, "Dismiss");
+        assert_eq!(p.auto_dismiss, None);
+    }
+
+    #[test]
+    fn prompt_builders_set_each_part() {
+        let p = Prompt::new("Q?", ["a", "b"])
+            .correct(1)
+            .dismiss_label("Skip")
+            .auto_dismiss(Some(Duration::from_secs(30)));
+        assert_eq!(p.correct, Some(1));
+        assert_eq!(p.dismiss, "Skip");
+        assert_eq!(p.auto_dismiss, Some(Duration::from_secs(30)));
     }
 }
