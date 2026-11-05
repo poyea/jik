@@ -554,10 +554,8 @@ impl WindowState {
                         None,
                     ) != 0
                 }
-                Err(err) => {
-                    eprintln!("popup fade-out failed: {err:#}");
-                    false
-                }
+                // Without the animation, the popup closes at once.
+                Err(_) => false,
             };
             if !started {
                 self.response.set(Some(response));
@@ -636,10 +634,9 @@ impl WindowState {
         })
     }
 
+    /// A failed redraw keeps the last frame. The next redraw tries again.
     fn redraw(&self) {
-        if let Err(err) = self.draw() {
-            eprintln!("popup redraw failed: {err:#}");
-        }
+        let _ = self.draw();
     }
 }
 
