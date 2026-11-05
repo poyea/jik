@@ -1,6 +1,11 @@
 // Copyright (c) 2026 John Law
 // SPDX-License-Identifier: MIT
 
+//! A frosted-glass popup that asks a question with choice buttons.
+//!
+//! The blurred desktop shows through the popup. It fades in at a [`Placement`] in the work
+//! area of the primary monitor, stays on top, and does not take the keyboard focus.
+
 mod glass;
 
 use std::cell::{Cell, RefCell};
@@ -70,8 +75,11 @@ const PROMPT_FONT: f32 = 16.0;
 const BUTTON_FONT: f32 = 14.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How a popup ended.
 pub enum Response {
+    /// The user clicked the choice at this index.
     Choice(usize),
+    /// The user clicked the dismiss button.
     Dismissed,
     /// The auto-dismiss countdown came to zero, and the popup faded out.
     TimedOut,
@@ -80,7 +88,9 @@ pub enum Response {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The answer of [`ChoicePopup::ask`].
 pub struct Reply {
+    /// How the popup ended.
     pub response: Response,
     /// The time of the click or of the timeout, not the time the popup closed.
     pub at: SystemTime,
@@ -134,6 +144,10 @@ impl<'a> Prompt<'a> {
     }
 }
 
+/// A popup that asks one [`Prompt`] at a time.
+///
+/// It keeps no window between prompts: [`ChoicePopup::ask`] makes the window and the GPU
+/// resources, and frees them before it returns.
 pub struct ChoicePopup {
     ui: Ui,
     placement: Placement,
@@ -154,6 +168,7 @@ impl ChoicePopup {
         self.placement = placement;
     }
 
+    /// A popup that shows at `placement` in the work area.
     pub fn new(ui: &Ui, placement: Placement) -> Result<Self> {
         crate::register_class(&WNDCLASSEXW {
             cbSize: size_of::<WNDCLASSEXW>() as u32,

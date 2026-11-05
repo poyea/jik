@@ -1,8 +1,78 @@
 // Copyright (c) 2026 John Law
 // SPDX-License-Identifier: MIT
 
-//! Use all UI types on one thread. That thread must run the message loops
-//! in [`popup::ChoicePopup::ask`], [`dialog::Dialog::run`], and [`tray::Tray::wait`].
+#![warn(missing_docs)]
+
+//! Building blocks for small Windows tray apps.
+//!
+//! - [`tray`]: an icon in the notification area with a menu, and [`Tray::wait`], the main
+//!   loop of the app. It sleeps until a menu command, a deadline, or an unlock of the session.
+//! - [`popup`]: a frosted-glass popup with a question and choice buttons. It fades in without
+//!   taking the keyboard focus, can show whether a choice was correct, and can dismiss itself.
+//! - [`dialog`]: a small modal window made of standard controls, in the same colors.
+//! - [`placement`]: where a window shows, as fractions of the free space of the screen.
+//! - [`autostart`], [`presence`], [`process`], [`single_instance`], and [`show_error`]: small
+//!   helpers that tray apps often need.
+//!
+//! All windows follow the Windows light or dark app mode and the display scale.
+//!
+//! # Threads
+//!
+//! Make one [`Ui`] on the thread that shows the windows, and make all windows on that thread.
+//! [`Ui`] is not `Send`, so the compiler stops a window from going to another thread. The
+//! thread must run the loops of [`Tray::wait`], [`ChoicePopup::ask`], and [`Dialog::run`]:
+//! each of them handles the window messages of the thread while it waits.
+//!
+//! # Example
+//!
+//! A tray app that asks a question each minute and on "Ask now". The same program is in
+//! `examples/quiz.rs`.
+//!
+//! ```no_run
+//! use std::time::{Duration, SystemTime};
+//!
+//! use traykit::Ui;
+//! use traykit::placement::Placement;
+//! use traykit::popup::{ChoicePopup, Prompt, Response};
+//! use traykit::tray::{Icon, MenuItem, Tray, Wake};
+//!
+//! #[derive(Debug, Clone, PartialEq, Eq)]
+//! enum Command {
+//!     AskNow,
+//! }
+//!
+//! fn main() -> traykit::Result<()> {
+//!     let ui = Ui::new()?;
+//!     let size = Icon::tray_size();
+//!     let icon = Icon::from_argb(size, vec![0xFF2E_86DE; (size * size) as usize])?;
+//!     let mut tray = Tray::new(&ui, "Quiz", &icon)?;
+//!     tray.set_menu(&[
+//!         MenuItem::command(Command::AskNow, "Ask now"),
+//!         MenuItem::Separator,
+//!         MenuItem::Quit("Quit".into()),
+//!     ]);
+//!     let mut popup = ChoicePopup::new(&ui, Placement::default())?;
+//!     loop {
+//!         let next = SystemTime::now() + Duration::from_secs(60);
+//!         match tray.wait(Some(next))? {
+//!             Wake::Quit => return Ok(()),
+//!             Wake::SessionUnlocked => {}
+//!             Wake::Deadline | Wake::Command(Command::AskNow) => {
+//!                 let prompt = Prompt::new("What is 2 + 2?", ["3", "4", "5"])
+//!                     .correct(1)
+//!                     .auto_dismiss(Some(Duration::from_secs(30)));
+//!                 if popup.ask(&prompt)?.response == Response::Quit {
+//!                     return Ok(());
+//!                 }
+//!             }
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! [`Tray::wait`]: tray::Tray::wait
+//! [`ChoicePopup::ask`]: popup::ChoicePopup::ask
+//! [`Dialog::run`]: dialog::Dialog::run
 
 pub mod autostart;
 pub mod dialog;
@@ -54,6 +124,8 @@ pub(crate) fn primary_monitor_dpi() -> u32 {
     }
 }
 
+/// Show an error in a message box, and wait until the user closes it.
+/// It needs no [`Ui`], so it also works before the setup or after a failed setup.
 pub fn show_error(title: &str, message: &str) {
     unsafe {
         MessageBoxW(
@@ -65,6 +137,8 @@ pub fn show_error(title: &str, message: &str) {
     }
 }
 
+/// Proof that this process is the only one with a name in the user session.
+/// The name is free again when the guard is dropped or the process ends.
 pub struct InstanceGuard(HANDLE);
 
 impl Drop for InstanceGuard {
@@ -75,6 +149,8 @@ impl Drop for InstanceGuard {
     }
 }
 
+/// Take `name` for this process in the user session. It gives `None` if another process
+/// has the name, for example a second start of the same app.
 pub fn single_instance(name: &str) -> Result<Option<InstanceGuard>> {
     unsafe {
         let handle = CreateMutexW(None, true, &HSTRING::from(format!("Local\\{name}")))

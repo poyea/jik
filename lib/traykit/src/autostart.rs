@@ -1,6 +1,11 @@
 // Copyright (c) 2026 John Law
 // SPDX-License-Identifier: MIT
 
+//! Start the app when the user signs in to Windows.
+//!
+//! The entry is in the `Run` key of the current user, so it needs no administrator rights.
+//! It starts the executable that is running now, so a moved executable needs a new entry.
+
 use crate::error::{Call, Error, Result};
 use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 use windows::Win32::System::Registry::{
@@ -15,6 +20,7 @@ fn command() -> Result<String> {
     Ok(format!("\"{}\"", exe.display()))
 }
 
+/// Whether the `Run` entry `name` starts the running executable.
 pub fn is_enabled(name: &str) -> bool {
     let Ok(expected) = command() else {
         return false;
@@ -39,6 +45,8 @@ pub fn is_enabled(name: &str) -> bool {
     String::from_utf16_lossy(&buf[..len]).eq_ignore_ascii_case(&expected)
 }
 
+/// Add or remove the `Run` entry `name` for the running executable.
+/// Removing an entry that does not exist is not an error.
 pub fn set_enabled(name: &str, enabled: bool) -> Result<()> {
     let name = HSTRING::from(name);
     unsafe {

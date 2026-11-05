@@ -9,6 +9,7 @@ use windows::Win32::UI::Shell::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Why the user cannot see a popup now.
 pub enum Busy {
     /// The screen is locked, the screen saver shows, or another user session is active.
     Away,

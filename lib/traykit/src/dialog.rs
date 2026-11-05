@@ -127,13 +127,18 @@ const FONT_FACES: [PCWSTR; 2] = [w!("Segoe UI Variable Text"), w!("Segoe UI")];
 /// A position and size in pixels at 100% display scale. The dialog scales them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bounds {
+    /// The left edge, from the left of the client area.
     pub x: i32,
+    /// The top edge, from the top of the client area.
     pub y: i32,
+    /// The width.
     pub width: i32,
+    /// The height.
     pub height: i32,
 }
 
 impl Bounds {
+    /// Bounds with this top-left corner and size.
     pub const fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
         Self {
             x,
@@ -309,6 +314,7 @@ pub struct EditStyle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What the user did. [`Dialog::run`] gives events to its handler one at a time.
 pub enum Event {
     /// A button or a check box was clicked.
     Clicked(AnyId),
@@ -322,12 +328,16 @@ pub enum Event {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What the handler of [`Dialog::run`] wants next.
 pub enum Flow {
+    /// Keep the dialog open and wait for the next event.
     Continue,
+    /// Close the dialog. [`Dialog::run`] then returns [`Outcome::Closed`].
     Close,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How [`Dialog::run`] ended.
 pub enum Outcome {
     /// The handler returned [`Flow::Close`].
     Closed,
@@ -507,6 +517,10 @@ impl Shared {
     }
 }
 
+/// A modal window with controls that the app places.
+///
+/// Make it with [`Dialog::new`], add the controls with the `add_` methods, then call
+/// [`Dialog::run`]. The window closes when the `Dialog` is dropped.
 pub struct Dialog {
     _ui: Ui,
     hwnd: HWND,
