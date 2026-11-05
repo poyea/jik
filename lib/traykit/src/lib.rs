@@ -88,6 +88,11 @@ mod theme;
 pub mod tray;
 mod ui;
 
+/// Compiles the example of the README as a doc test.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeExample;
+
 pub use error::{Error, Result};
 pub use ui::Ui;
 
