@@ -1,16 +1,21 @@
 [package]
 name = "traykit"
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
+rust-version = "1.88"
 authors.workspace = true
 description = "Building blocks for small Windows tray apps: tray icon and menu, glass popup, dialogs, autostart."
 include = ["src/**/*", "examples/**/*"]
-license-file.workspace = true
+license = "MIT"
 repository.workspace = true
 homepage.workspace = true
+documentation = "https://docs.rs/traykit"
 keywords = ["windows", "win32", "tray", "popup", "acrylic"]
 categories = ["gui", "os::windows-apis"]
-publish = false
+
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
 
 [dependencies]
 windows-numerics = "0.3"
