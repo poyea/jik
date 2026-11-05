@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 mod config;
+mod schedule;
 mod setting;
 
 pub use config::{Config, PopupConfig, Position, Preset};

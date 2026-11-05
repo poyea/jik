@@ -13,3 +13,17 @@ position = "bottom-right"
 # The Skip button shows the countdown. The countdown stops while the pointer is on the popup.
 # Use 0 to turn auto-skip off. Default: 30.
 auto_skip_seconds = 30
+
+[schedule]
+# How long a question waits in each Leitner box, from box 1 up.
+# A right answer moves the question up one box, and a wrong answer moves it back to box 1.
+# Each wait is a whole number and a unit: s, m, h, d, or w. For example "90s" or "3d".
+# Restart jik after you change this section.
+boxes = ["10m", "1h", "1d", "3d", "7d"]
+
+# A random change of each wait, so that questions do not come at fixed times.
+# 0.2 is plus or minus 20%. Use a value from 0 to less than 1.
+jitter = 0.2
+
+# The shortest time between two popups, and before the first popup after jik starts.
+min_gap = "2m"

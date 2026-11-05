@@ -98,6 +98,10 @@ mod tests {
     fn default_file_parses_to_defaults() {
         let c: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
         assert_eq!(c.popup.position, Position::Named(Preset::BottomRight));
+        assert_eq!(
+            c.schedule,
+            super::super::schedule::ScheduleSettings::default()
+        );
     }
 
     #[test]

@@ -97,7 +97,13 @@ fn run() -> Result<()> {
 
     let mut schedule = Schedule::load(
         &dir.join(STATE_FILE),
-        ScheduleConfig::default().scaled(settings.time_scale),
+        ScheduleConfig {
+            periods: settings.config.schedule.boxes.clone(),
+            jitter: settings.config.schedule.jitter,
+            min_gap: settings.config.schedule.min_gap,
+            ..ScheduleConfig::default()
+        }
+        .scaled(settings.time_scale),
     )?;
     schedule.sync(&questions, Utc::now());
     schedule.save()?;

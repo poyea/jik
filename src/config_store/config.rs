@@ -5,10 +5,13 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use super::schedule::ScheduleSettings;
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub popup: PopupConfig,
+    pub schedule: ScheduleSettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
