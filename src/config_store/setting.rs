@@ -22,13 +22,14 @@ pub struct Settings {
 impl Settings {
     pub fn load(config_path: &Path) -> Result<Self> {
         Ok(Self {
-            config: load_or_create_config(config_path)?,
+            config: load_config(config_path)?,
             time_scale: time_scale_from_env()?,
         })
     }
 }
 
-fn load_or_create_config(path: &Path) -> Result<Config> {
+/// Read `config.toml`. If it does not exist, write the default file first.
+pub fn load_config(path: &Path) -> Result<Config> {
     if !path.exists() {
         std::fs::write(path, DEFAULT_CONFIG)
             .with_context(|| format!("writing default {}", path.display()))?;
