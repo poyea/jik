@@ -33,7 +33,7 @@ pub fn run_tray<P: Popup>(
     // A due question that waits because the user cannot see it now: why, and the next check.
     let mut held: Option<(Busy, DateTime<Utc>)> = None;
     let mut autostart = traykit::autostart::is_enabled(APP_NAME);
-    traykit::process::set_background(true);
+    traykit::process::set_efficiency_mode(true);
 
     loop {
         let now = Utc::now();
@@ -100,9 +100,9 @@ pub fn run_tray<P: Popup>(
             }
             Wake::Command(Command::Settings) => {
                 tray.set_busy(true);
-                traykit::process::set_background(false);
+                traykit::process::set_efficiency_mode(false);
                 let opened = settings::open(ui, &files, &config, autostart, &session.questions);
-                traykit::process::set_background(true);
+                traykit::process::set_efficiency_mode(true);
                 tray.set_busy(false);
                 match opened {
                     Ok(Opened::Saved(edited)) => {
@@ -130,9 +130,9 @@ pub fn run_tray<P: Popup>(
 
         if ask_now {
             tray.set_busy(true);
-            traykit::process::set_background(false);
+            traykit::process::set_efficiency_mode(false);
             let asked = session.ask_next();
-            traykit::process::set_background(true);
+            traykit::process::set_efficiency_mode(true);
             tray.set_busy(false);
             match asked {
                 Ok(Asked::Quit) => return Ok(()),
