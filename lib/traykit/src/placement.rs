@@ -4,7 +4,7 @@
 //! Where a window shows in an area, as fractions of the free space in that area.
 
 /// The space between a window and the edge of the work area, at 100% display scale.
-pub const SCREEN_MARGIN: f32 = 12.0;
+pub(crate) const SCREEN_MARGIN: f32 = 12.0;
 
 /// `x` and `y` go from 0 (the left or top edge) to 1 (the right or bottom edge) of the free
 /// space, that is, the area less the window size and a margin on each side. Thus 0.5 is the
@@ -31,43 +31,22 @@ impl Placement {
         }
     }
 
+    /// Where the window is across the free space: 0 is the left edge and 1 the right edge.
     pub fn x(self) -> f32 {
         self.x
     }
 
+    /// Where the window is down the free space: 0 is the top edge and 1 the bottom edge.
     pub fn y(self) -> f32 {
         self.y
     }
 
-    /// The top-left corner of a window of this size in `area` (left, top, right, bottom).
+    /// The top-left corner of a window of this size in `area`, in whole pixels.
     /// If the window is larger than the area, its top-left corner stays in the area, so the
     /// start of the content is visible.
-    pub fn place(
-        self,
-        area: (i32, i32, i32, i32),
-        width: i32,
-        height: i32,
-        margin: i32,
-    ) -> (i32, i32) {
-        let (x, y) = self.place_exact(Area::from(area), width as f32, height as f32, margin as f32);
+    pub(crate) fn place(self, area: Area, width: i32, height: i32, margin: i32) -> (i32, i32) {
+        let (x, y) = self.place_exact(area, width as f32, height as f32, margin as f32);
         (x.round() as i32, y.round() as i32)
-    }
-
-    /// The placement that puts the top-left corner of a window of this size at `(x, y)`.
-    pub fn at(
-        area: (i32, i32, i32, i32),
-        width: i32,
-        height: i32,
-        margin: i32,
-        (x, y): (i32, i32),
-    ) -> Self {
-        Self::at_exact(
-            Area::from(area),
-            width as f32,
-            height as f32,
-            margin as f32,
-            (x as f32, y as f32),
-        )
     }
 
     /// [`Placement::place`] without rounding, for a drawing of the area at a smaller scale.
@@ -84,7 +63,7 @@ impl Placement {
         )
     }
 
-    /// [`Placement::at`] without rounding, for a drawing of the area at a smaller scale.
+    /// The placement that puts the top-left corner of a window of this size at `(x, y)`.
     pub(crate) fn at_exact(
         area: Area,
         width: f32,
@@ -135,7 +114,12 @@ fn fraction_at(start: f32, end: f32, size: f32, margin: f32, position: f32) -> f
 mod tests {
     use super::*;
 
-    const AREA: (i32, i32, i32, i32) = (0, 0, 1000, 800);
+    const AREA: Area = Area {
+        left: 0.0,
+        top: 0.0,
+        right: 1000.0,
+        bottom: 800.0,
+    };
 
     #[test]
     fn places_corners_and_center() {
@@ -183,17 +167,20 @@ mod tests {
     #[test]
     fn at_is_the_inverse_of_place() {
         let p = Placement::new(0.25, 0.75);
-        let corner = p.place(AREA, 100, 50, 10);
-        let back = Placement::at(AREA, 100, 50, 10, corner);
+        let (x, y) = p.place(AREA, 100, 50, 10);
+        let back = Placement::at_exact(AREA, 100.0, 50.0, 10.0, (x as f32, y as f32));
         assert!((back.x() - 0.25).abs() < 0.01 && (back.y() - 0.75).abs() < 0.01);
     }
 
     #[test]
     fn at_clamps_outside_the_free_space() {
         assert_eq!(
-            Placement::at(AREA, 100, 50, 10, (-50, 2000)),
+            Placement::at_exact(AREA, 100.0, 50.0, 10.0, (-50.0, 2000.0)),
             Placement::new(0.0, 1.0)
         );
-        assert_eq!(Placement::at(AREA, 2000, 50, 10, (0, 0)).x(), 0.5);
+        assert_eq!(
+            Placement::at_exact(AREA, 2000.0, 50.0, 10.0, (0.0, 0.0)).x(),
+            0.5
+        );
     }
 }

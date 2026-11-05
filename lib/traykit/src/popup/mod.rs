@@ -40,7 +40,7 @@ use windows::core::{BOOL, PCWSTR, w};
 use windows_numerics::Vector2;
 
 use crate::Ui;
-use crate::placement::{Placement, SCREEN_MARGIN};
+use crate::placement::{Area, Placement, SCREEN_MARGIN};
 use crate::theme::Theme;
 use glass::{Graphics, Scene};
 
@@ -208,7 +208,7 @@ impl ChoicePopup {
             .call("SystemParametersInfoW(SPI_GETWORKAREA)")?;
             let margin = (SCREEN_MARGIN * scale).round() as i32;
             let (x, y) = self.placement.place(
-                (work.left, work.top, work.right, work.bottom),
+                Area::from((work.left, work.top, work.right, work.bottom)),
                 win_w,
                 win_h,
                 margin,
