@@ -29,7 +29,7 @@ pub fn run_tray<P: Popup>(
     files: Files,
 ) -> Result<()> {
     let mut events = EventLoop::new(ui)?;
-    let mut tray = Tray::new(&mut events)?;
+    let mut tray = Tray::new(&events)?;
     let min_gap = chrono::Duration::from_std(session.schedule.config().min_gap)?;
     let mut earliest = Utc::now() + min_gap;
     let mut pause: Option<Pause> = None;

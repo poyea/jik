@@ -51,7 +51,7 @@ impl GlassPopup {
         })
     }
 
-    fn prompt<'a>(&self, question: &'a Question) -> Prompt<'a> {
+    fn prompt(&self, question: &Question) -> Prompt {
         let correct = question.correct_index();
         Prompt::new(&question.text, question.choices.iter().map(String::as_str))
             .marks(|clicked| {

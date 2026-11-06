@@ -33,7 +33,7 @@ pub struct Tray {
 }
 
 impl Tray {
-    pub fn new(events: &mut EventLoop<Command>) -> Result<Self> {
+    pub fn new(events: &EventLoop<Command>) -> Result<Self> {
         Ok(Self {
             inner: tray::Tray::new(events, "jik", &app_icon(Icon::tray_size())?)?,
             state: None,
