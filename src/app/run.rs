@@ -4,15 +4,17 @@
 use anyhow::Result;
 use chrono::{DateTime, Local, Utc};
 use glasskit::Ui;
+use glasskit::events::{Event, EventLoop};
 use glasskit::presence::{self, Busy};
 
 use super::APP_NAME;
-use super::session::{Asked, Session};
+use super::session::{Asked, Session, Shown};
 use super::settings::{self, Files, Opened};
 use crate::config_store::Config;
 use crate::study::schedule::ScheduleConfig;
 use crate::ui::popup::Popup;
-use crate::ui::tray::{Command, MenuState, Tray, Wake};
+use crate::ui::settings::SettingsWindow;
+use crate::ui::tray::{Command, MenuState, Tray};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Pause {
@@ -26,21 +28,33 @@ pub fn run_tray<P: Popup>(
     mut config: Config,
     files: Files,
 ) -> Result<()> {
-    let mut tray = Tray::new(ui)?;
+    let mut events = EventLoop::new(ui)?;
+    let mut tray = Tray::new(&mut events)?;
     let min_gap = chrono::Duration::from_std(session.schedule.config().min_gap)?;
     let mut earliest = Utc::now() + min_gap;
     let mut pause: Option<Pause> = None;
     // A due question that waits because the user cannot see it now: why, and the next check.
     let mut held: Option<(Busy, DateTime<Utc>)> = None;
     let mut autostart = glasskit::autostart::is_enabled(APP_NAME);
-    glasskit::process::set_efficiency_mode(true);
+    // The question that the popup shows now, and the settings window. Both can show together.
+    let mut asking: Option<Shown> = None;
+    let mut editing: Option<SettingsWindow> = None;
+    let mut efficient = None;
 
     loop {
+        // A window that shows must answer the user at once.
+        let idle = asking.is_none() && editing.is_none();
+        if efficient != Some(idle) {
+            glasskit::process::set_efficiency_mode(idle);
+            efficient = Some(idle);
+        }
+
         let now = Utc::now();
         if matches!(pause, Some(Pause::Until(t)) if t <= now) {
             pause = None;
         }
         let pop_at = match pause {
+            _ if asking.is_some() => None,
             Some(Pause::Indefinite) => None,
             _ => session.schedule.next_due().map(|(_, due)| {
                 let mut at = due.max(earliest);
@@ -54,25 +68,31 @@ pub fn run_tray<P: Popup>(
             }),
         };
 
+        let status = if asking.is_some() && pause.is_none() {
+            "Question showing".into()
+        } else {
+            status_text(pause, pop_at, now, held.map(|(busy, _)| busy))
+        };
         tray.set_menu(MenuState {
-            status: status_text(pause, pop_at, now, held.map(|(busy, _)| busy)),
-            busy: false,
+            status,
+            asking: asking.is_some(),
+            editing: editing.is_some(),
             paused: pause.is_some(),
             autostart,
         });
 
-        let ask_now = match tray.wait(pop_at)? {
-            Wake::Quit => return Ok(()),
+        let ask_now = match events.next(pop_at.map(Into::into))? {
+            Event::Quit => return Ok(()),
             // A question that you ask for shows at once. A due question waits until you can see it.
-            Wake::Command(Command::AskNow) => true,
-            Wake::Due => match presence::busy() {
+            Event::Command(Command::AskNow) => asking.is_none(),
+            Event::Deadline => match presence::busy() {
                 Some(busy) => {
                     held = Some((busy, Utc::now() + retry(busy, session.schedule.config())));
                     false
                 }
                 None => true,
             },
-            Wake::Unlocked => {
+            Event::SessionUnlocked => {
                 // Give the user a moment after they come back, then show the waiting question.
                 earliest = earliest.max(Utc::now() + min_gap);
                 if matches!(held, Some((Busy::Away, _))) {
@@ -80,67 +100,84 @@ pub fn run_tray<P: Popup>(
                 }
                 false
             }
-            Wake::Command(Command::Pause(duration)) => {
+            Event::Command(Command::Pause(duration)) => {
                 pause = Some(match duration {
                     Some(d) => Pause::Until(Utc::now() + chrono::Duration::from_std(d)?),
                     None => Pause::Indefinite,
                 });
                 false
             }
-            Wake::Command(Command::Resume) => {
+            Event::Command(Command::Resume) => {
                 pause = None;
                 false
             }
-            Wake::Command(Command::ToggleAutostart) => {
+            Event::Command(Command::ToggleAutostart) => {
                 match settings::set_autostart(!autostart) {
                     Ok(()) => autostart = !autostart,
                     Err(err) => report(&err),
                 }
                 false
             }
-            Wake::Command(Command::Settings) => {
-                tray.set_busy(true);
-                glasskit::process::set_efficiency_mode(false);
-                let opened = settings::open(ui, &files, &config, autostart, &session.questions);
-                glasskit::process::set_efficiency_mode(true);
-                tray.set_busy(false);
-                match opened {
-                    Ok(Opened::Saved(edited)) => {
-                        session.popup.configure(&edited.config.popup);
-                        session.questions = edited.questions;
-                        session.schedule.sync(&session.questions, Utc::now());
-                        if let Err(err) = session.schedule.save() {
-                            report(&err);
-                        }
-                        config = edited.config;
-                        if edited.autostart != autostart {
-                            match settings::set_autostart(edited.autostart) {
-                                Ok(()) => autostart = edited.autostart,
-                                Err(err) => report(&err),
+            Event::Command(Command::Settings) => {
+                if editing.is_none() {
+                    match settings::start(ui, &files, &config, autostart, &session.questions) {
+                        Ok(window) => editing = Some(window),
+                        Err(err) => report(&err),
+                    }
+                }
+                false
+            }
+            Event::Dialog(id) => {
+                let outcome = editing
+                    .as_mut()
+                    .filter(|window| window.id() == id)
+                    .and_then(SettingsWindow::handle_events);
+                if let Some(outcome) = outcome {
+                    editing = None;
+                    match settings::save(&files, outcome) {
+                        Ok(Opened::Saved(edited)) => {
+                            session.popup.configure(&edited.config.popup);
+                            session.questions = edited.questions;
+                            session.schedule.sync(&session.questions, Utc::now());
+                            if let Err(err) = session.schedule.save() {
+                                report(&err);
+                            }
+                            config = edited.config;
+                            if edited.autostart != autostart {
+                                match settings::set_autostart(edited.autostart) {
+                                    Ok(()) => autostart = edited.autostart,
+                                    Err(err) => report(&err),
+                                }
                             }
                         }
+                        Ok(Opened::Unchanged) => {}
+                        Ok(Opened::Quit) => return Ok(()),
+                        Err(err) => report(&err),
                     }
-                    Ok(Opened::Unchanged) => {}
-                    Ok(Opened::Quit) => return Ok(()),
-                    Err(err) => report(&err),
+                }
+                false
+            }
+            Event::Popup(_) => {
+                if let Some(reply) = session.popup.take_reply()
+                    && let Some(shown) = asking.take()
+                {
+                    match session.finish(shown, reply) {
+                        Ok(Asked::Quit) => return Ok(()),
+                        Ok(Asked::Done) => {}
+                        Err(err) => report(&err),
+                    }
+                    held = None;
+                    earliest = Utc::now() + min_gap;
                 }
                 false
             }
         };
 
         if ask_now {
-            tray.set_busy(true);
-            glasskit::process::set_efficiency_mode(false);
-            let asked = session.ask_next();
-            glasskit::process::set_efficiency_mode(true);
-            tray.set_busy(false);
-            match asked {
-                Ok(Asked::Quit) => return Ok(()),
-                Ok(Asked::Done) => {}
+            match session.show_next() {
+                Ok(shown) => asking = shown,
                 Err(err) => report(&err),
             }
-            held = None;
-            earliest = Utc::now() + min_gap;
         }
     }
 }

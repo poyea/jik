@@ -4,8 +4,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
-use glasskit::Ui;
+use glasskit::events::EventLoop;
 use glasskit::tray::{self, Icon, MenuItem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,54 +16,38 @@ pub enum Command {
     Settings,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Wake {
-    Due,
-    /// The user unlocked the session.
-    Unlocked,
-    Command(Command),
-    Quit,
-}
-
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MenuState {
     pub status: String,
-    pub busy: bool,
+    /// A question shows now.
+    pub asking: bool,
+    /// The settings window shows now.
+    pub editing: bool,
     pub paused: bool,
     pub autostart: bool,
 }
 
 pub struct Tray {
     inner: tray::Tray<Command>,
-    state: MenuState,
+    state: Option<MenuState>,
 }
 
 impl Tray {
-    pub fn new(ui: &Ui) -> Result<Self> {
+    pub fn new(events: &mut EventLoop<Command>) -> Result<Self> {
         Ok(Self {
-            inner: tray::Tray::new(ui, "jik", &app_icon(Icon::tray_size())?)?,
-            state: MenuState::default(),
+            inner: tray::Tray::new(events, "jik", &app_icon(Icon::tray_size())?)?,
+            state: None,
         })
     }
 
+    /// Show this state. The menu is made again only when the state changes.
     pub fn set_menu(&mut self, state: MenuState) {
+        if self.state.as_ref() == Some(&state) {
+            return;
+        }
         self.inner.set_tooltip(&format!("jik - {}", state.status));
-        self.state = state;
-        self.inner.set_menu(&menu_items(&self.state));
-    }
-
-    pub fn set_busy(&mut self, busy: bool) {
-        self.state.busy = busy;
-        self.inner.set_menu(&menu_items(&self.state));
-    }
-
-    pub fn wait(&self, until: Option<DateTime<Utc>>) -> Result<Wake> {
-        Ok(match self.inner.wait(until.map(Into::into))? {
-            tray::Wake::Deadline => Wake::Due,
-            tray::Wake::SessionUnlocked => Wake::Unlocked,
-            tray::Wake::Quit => Wake::Quit,
-            tray::Wake::Command(command) => Wake::Command(command),
-        })
+        self.inner.set_menu(&menu_items(&state));
+        self.state = Some(state);
     }
 }
 
@@ -87,10 +70,10 @@ fn menu_items(state: &MenuState) -> Vec<MenuItem<Command>> {
     vec![
         MenuItem::Label(state.status.clone()),
         MenuItem::Separator,
-        MenuItem::command(Command::AskNow, "Ask now").enabled(!state.busy),
+        MenuItem::command(Command::AskNow, "Ask now").enabled(!state.asking),
         pause,
         MenuItem::command(Command::ToggleAutostart, "Start with Windows").checked(state.autostart),
-        MenuItem::command(Command::Settings, "Settings...").enabled(!state.busy),
+        MenuItem::command(Command::Settings, "Settings...").enabled(!state.editing),
         MenuItem::Separator,
         MenuItem::Quit("Quit".into()),
     ]
@@ -143,17 +126,25 @@ mod tests {
     }
 
     #[test]
-    fn busy_disables_ask_now_and_settings() {
-        let busy = menu_items(&MenuState {
-            busy: true,
-            ..Default::default()
-        });
-        for command in [Command::AskNow, Command::Settings] {
-            assert!(matches!(
-                find(&busy, command),
+    fn open_windows_disable_their_items() {
+        let disabled = |state: MenuState, command| {
+            matches!(
+                find(&menu_items(&state), command),
                 Some(MenuItem::Command { enabled: false, .. })
-            ));
-        }
+            )
+        };
+        let asking = MenuState {
+            asking: true,
+            ..Default::default()
+        };
+        assert!(disabled(asking.clone(), Command::AskNow));
+        assert!(!disabled(asking, Command::Settings));
+        let editing = MenuState {
+            editing: true,
+            ..Default::default()
+        };
+        assert!(disabled(editing.clone(), Command::Settings));
+        assert!(!disabled(editing, Command::AskNow));
     }
 
     #[test]

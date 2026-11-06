@@ -4,6 +4,8 @@
 use anyhow::Result;
 use glasskit::Ui;
 use glasskit::dialog::{AnyId, Bounds, Dialog, EditStyle, Event, Flow, Id, Outcome, kind};
+use glasskit::events::DialogId;
+use glasskit::layout::{Column, Size};
 
 use crate::config_store::{Config, Position, Preset};
 use crate::study::questions::{self, Question};
@@ -162,9 +164,19 @@ struct Ids {
     cancel: Id<kind::Button>,
 }
 
+/// The space inside a group box, below its title.
+fn inside(group: Bounds) -> Bounds {
+    Bounds::new(
+        group.x + 16,
+        group.y + 30,
+        group.width - 32,
+        group.height - 46,
+    )
+}
+
 fn build_dialog(ui: &Ui) -> Result<(Dialog, Ids)> {
-    let mut d = Dialog::new(ui, TITLE, 720, 620)?;
-    let b = Bounds::new;
+    let (width, height) = (720, 620);
+    let mut d = Dialog::new(ui, TITLE, width, height)?;
     let one_line_digits = EditStyle {
         multiline: false,
         digits_only: true,
@@ -173,32 +185,55 @@ fn build_dialog(ui: &Ui) -> Result<(Dialog, Ids)> {
         multiline: true,
         digits_only: false,
     };
-    d.add_group("General", b(16, 16, 688, 196))?;
-    d.add_label("Popup position", b(32, 54, 216, 26))?;
-    let position = d.add_drop_down(b(256, 54, 180, 26))?;
-    d.add_label("Auto-skip after (seconds, 0 = off)", b(32, 88, 216, 26))?;
-    let auto_skip = d.add_edit(one_line_digits, b(256, 88, 80, 26))?;
-    let autostart = d.add_check("Start with Windows", b(32, 122, 300, 26))?;
+    let mut page = Column::new(Bounds::new(0, 0, width, height).inset(16), 16);
+
+    let general = page.next(196);
+    d.add_group("General", general)?;
+    let [settings, picture] = inside(general).columns([Size::Fill(1), Size::Fixed(232)], 20);
+    let mut rows = Column::new(settings, 8);
+    let field = |row: Bounds, width: i32| {
+        let [label, control, _] =
+            row.columns([Size::Fixed(216), Size::Fixed(width), Size::Fill(1)], 8);
+        (label, control)
+    };
+    let (label, control) = field(rows.next(26), 180);
+    d.add_label("Popup position", label)?;
+    let position = d.add_drop_down(control)?;
+    let (label, control) = field(rows.next(26), 80);
+    d.add_label("Auto-skip after (seconds, 0 = off)", label)?;
+    let auto_skip = d.add_edit(one_line_digits, control)?;
+    let autostart = d.add_check("Start with Windows", rows.next(26))?;
+    rows.skip(4);
     d.add_label(
         "Drag the popup in the picture to place it anywhere.",
-        b(32, 168, 404, 26),
+        rows.next(26),
     )?;
     let (window_width, window_height) = POPUP_SIZE;
-    let place = d.add_placement_picker(window_width, window_height, b(456, 46, 232, 156))?;
+    let place = d.add_placement_picker(window_width, window_height, picture)?;
 
-    d.add_group("Questions", b(16, 228, 688, 332))?;
-    let list = d.add_list(b(32, 266, 260, 236))?;
-    let add = d.add_button("Add", b(32, 514, 124, 30))?;
-    let delete = d.add_button("Delete", b(168, 514, 124, 30))?;
-    d.add_label("Question", b(308, 262, 380, 20))?;
-    let text = d.add_edit(multiline, b(308, 284, 380, 56))?;
-    d.add_label("Choices (one per line)", b(308, 348, 380, 20))?;
-    let choices = d.add_edit(multiline, b(308, 370, 380, 96))?;
-    d.add_label("Correct answer", b(308, 474, 380, 20))?;
-    let answer = d.add_drop_down(b(308, 496, 380, 26))?;
+    let group = page.next(332);
+    d.add_group("Questions", group)?;
+    let [left, right] = inside(group).columns([Size::Fixed(260), Size::Fill(1)], 16);
+    let mut left = Column::new(left, 12);
+    let list = d.add_list(left.next(left.rest().height - 42))?;
+    let [add, delete] = left.next(30).columns([Size::Fill(1), Size::Fill(1)], 12);
+    let add = d.add_button("Add", add)?;
+    let delete = d.add_button("Delete", delete)?;
+    let mut right = Column::new(right, 4);
+    d.add_label("Question", right.next(20))?;
+    let text = d.add_edit(multiline, right.next(56))?;
+    right.skip(4);
+    d.add_label("Choices (one per line)", right.next(20))?;
+    let choices = d.add_edit(multiline, right.next(96))?;
+    right.skip(4);
+    d.add_label("Correct answer", right.next(20))?;
+    let answer = d.add_drop_down(right.next(26))?;
 
-    let save = d.add_button("Save", b(504, 574, 96, 30))?;
-    let cancel = d.add_button("Cancel", b(608, 574, 96, 30))?;
+    let [_, save, cancel] = page
+        .next(30)
+        .columns([Size::Fill(1), Size::Fixed(96), Size::Fixed(96)], 8);
+    let save = d.add_button("Save", save)?;
+    let cancel = d.add_button("Cancel", cancel)?;
     Ok((
         d,
         Ids {
@@ -376,6 +411,53 @@ impl Editor {
     }
 }
 
+/// The settings window while it shows.
+pub struct SettingsWindow {
+    dialog: Dialog,
+    editor: Editor,
+}
+
+impl SettingsWindow {
+    /// Make the window with these settings, and show it.
+    pub fn open(ui: &Ui, config: &Config, autostart: bool, questions: &[Question]) -> Result<Self> {
+        let (mut dialog, ids) = build_dialog(ui)?;
+        let mut labels: Vec<&str> = Preset::ALL.iter().map(|p| p.label()).collect();
+        labels.push(CUSTOM_POSITION);
+        dialog.set_items(ids.position, &labels);
+        dialog.set_placement(ids.place, placement(config.popup.position));
+        show_position(&dialog, &ids, config.popup.position);
+        dialog.set_text(ids.auto_skip, &config.popup.auto_skip_seconds.to_string());
+        dialog.set_checked(ids.autostart, autostart);
+
+        let mut editor = Editor {
+            ids,
+            base: config.clone(),
+            drafts: questions.iter().map(Draft::from_question).collect(),
+            current: None,
+        };
+        dialog.set_items(editor.ids.list, &editor.labels());
+        let first = (!editor.drafts.is_empty()).then_some(0);
+        editor.select(&dialog, first);
+        dialog.show();
+        Ok(Self { dialog, editor })
+    }
+
+    pub fn id(&self) -> DialogId {
+        self.dialog.id()
+    }
+
+    /// Handle what the user did. It gives the outcome when the user saves or cancels; then
+    /// drop the window.
+    pub fn handle_events(&mut self) -> Option<SettingsOutcome> {
+        while let Some(event) = self.dialog.next_event() {
+            if let Some(outcome) = self.editor.handle(&mut self.dialog, event) {
+                return Some(outcome);
+            }
+        }
+        None
+    }
+}
+
 /// Show the settings window. It returns when the user saves or cancels.
 pub fn edit(
     ui: &Ui,
@@ -383,25 +465,10 @@ pub fn edit(
     autostart: bool,
     questions: &[Question],
 ) -> Result<SettingsOutcome> {
-    let (mut dialog, ids) = build_dialog(ui)?;
-    let mut labels: Vec<&str> = Preset::ALL.iter().map(|p| p.label()).collect();
-    labels.push(CUSTOM_POSITION);
-    dialog.set_items(ids.position, &labels);
-    dialog.set_placement(ids.place, placement(config.popup.position));
-    show_position(&dialog, &ids, config.popup.position);
-    dialog.set_text(ids.auto_skip, &config.popup.auto_skip_seconds.to_string());
-    dialog.set_checked(ids.autostart, autostart);
-
-    let mut editor = Editor {
-        ids,
-        base: config.clone(),
-        drafts: questions.iter().map(Draft::from_question).collect(),
-        current: None,
-    };
-    dialog.set_items(editor.ids.list, &editor.labels());
-    let first = (!editor.drafts.is_empty()).then_some(0);
-    editor.select(&dialog, first);
-
+    let SettingsWindow {
+        mut dialog,
+        mut editor,
+    } = SettingsWindow::open(ui, config, autostart, questions)?;
     let mut outcome = SettingsOutcome::Cancelled;
     let closed = dialog.run(|d, event| match editor.handle(d, event) {
         Some(result) => {

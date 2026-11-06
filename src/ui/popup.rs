@@ -7,7 +7,7 @@ use anyhow::Result;
 use chrono::{DateTime, Local};
 use glasskit::Ui;
 use glasskit::placement::Placement;
-use glasskit::popup::{ChoicePopup, Prompt, Response};
+use glasskit::popup::{ChoicePopup, Mark, Prompt, Reply, Response};
 
 use crate::config_store::{PopupConfig, Position};
 use crate::study::questions::Question;
@@ -28,7 +28,12 @@ pub struct PopupReply {
 }
 
 pub trait Popup {
+    /// Show the question and wait for the reply.
     fn ask(&mut self, question: &Question) -> Result<PopupReply>;
+    /// Show the question and return at once. The event loop tells when the reply is ready.
+    fn show(&mut self, question: &Question) -> Result<()>;
+    /// The reply, once the user has answered or skipped. It closes the popup.
+    fn take_reply(&mut self) -> Option<PopupReply>;
     /// Use new settings from the next popup.
     fn configure(&mut self, config: &PopupConfig);
 }
@@ -45,6 +50,20 @@ impl GlassPopup {
             auto_skip: config.auto_skip(),
         })
     }
+
+    fn prompt<'a>(&self, question: &'a Question) -> Prompt<'a> {
+        let correct = question.correct_index();
+        Prompt::new(&question.text, question.choices.iter().map(String::as_str))
+            .marks(|clicked| {
+                let mut marks = vec![(correct, Mark::Good)];
+                if clicked != correct {
+                    marks.push((clicked, Mark::Bad));
+                }
+                marks
+            })
+            .dismiss_label("Skip")
+            .auto_dismiss(self.auto_skip)
+    }
 }
 
 impl Popup for GlassPopup {
@@ -54,21 +73,28 @@ impl Popup for GlassPopup {
     }
 
     fn ask(&mut self, question: &Question) -> Result<PopupReply> {
-        let prompt = Prompt::new(&question.text, question.choices.iter().map(String::as_str))
-            .correct(question.correct_index())
-            .dismiss_label("Skip")
-            .auto_dismiss(self.auto_skip);
-        let reply = self.popup.ask(&prompt)?;
-        let result = match reply.response {
-            Response::Choice(i) => PopupResult::Answered(i),
-            Response::Dismissed => PopupResult::Skipped,
-            Response::TimedOut => PopupResult::TimedOut,
-            Response::Quit => PopupResult::Quit,
-        };
-        Ok(PopupReply {
-            result,
-            at: reply.at.into(),
-        })
+        Ok(to_reply(self.popup.ask(&self.prompt(question))?))
+    }
+
+    fn show(&mut self, question: &Question) -> Result<()> {
+        Ok(self.popup.show(&self.prompt(question))?)
+    }
+
+    fn take_reply(&mut self) -> Option<PopupReply> {
+        self.popup.take_reply().map(to_reply)
+    }
+}
+
+fn to_reply(reply: Reply) -> PopupReply {
+    let result = match reply.response {
+        Response::Choice(i) => PopupResult::Answered(i),
+        Response::Dismissed => PopupResult::Skipped,
+        Response::TimedOut => PopupResult::TimedOut,
+        Response::Quit => PopupResult::Quit,
+    };
+    PopupReply {
+        result,
+        at: reply.at.into(),
     }
 }
 

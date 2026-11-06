@@ -9,7 +9,7 @@ use glasskit::Ui;
 use super::APP_NAME;
 use crate::config_store::{Config, load_config, save_config};
 use crate::study::questions::{self, Question};
-use crate::ui::settings::{self, Edited, SettingsOutcome};
+use crate::ui::settings::{self, Edited, SettingsOutcome, SettingsWindow};
 
 pub struct Files {
     pub config: PathBuf,
@@ -22,11 +22,8 @@ pub enum Opened {
     Quit,
 }
 
-/// Show the settings window. If the user saves, write `config.toml` and `questions.toml`.
-///
-/// The window shows the files as they are on disk now, so a save does not undo changes that
-/// the user made to the files by hand while jik runs. If a file cannot be read, the window
-/// shows the settings that jik uses (`config` and `current`), and a save replaces the files.
+/// Show the settings window and wait. If the user saves, write `config.toml` and
+/// `questions.toml`.
 pub fn open(
     ui: &Ui,
     files: &Files,
@@ -34,7 +31,45 @@ pub fn open(
     autostart: bool,
     current: &[Question],
 ) -> Result<Opened> {
-    let (config, current) = match read_files(files) {
+    let (config, current) = settings_to_show(files, config, current);
+    let outcome = settings::edit(ui, &config, autostart, &current)?;
+    save(files, outcome)
+}
+
+/// Show the settings window and return at once. Give its outcome to [`save`].
+pub fn start(
+    ui: &Ui,
+    files: &Files,
+    config: &Config,
+    autostart: bool,
+    current: &[Question],
+) -> Result<SettingsWindow> {
+    let (config, current) = settings_to_show(files, config, current);
+    SettingsWindow::open(ui, &config, autostart, &current)
+}
+
+/// If the user saved, write `config.toml` and `questions.toml`.
+pub fn save(files: &Files, outcome: SettingsOutcome) -> Result<Opened> {
+    match outcome {
+        SettingsOutcome::Cancelled => Ok(Opened::Unchanged),
+        SettingsOutcome::Quit => Ok(Opened::Quit),
+        SettingsOutcome::Saved(edited) => {
+            save_config(&files.config, &edited.config)?;
+            questions::save(&files.questions, &edited.questions)?;
+            Ok(Opened::Saved(edited))
+        }
+    }
+}
+
+/// The window shows the files as they are on disk now, so a save does not undo changes that
+/// the user made to the files by hand while jik runs. If a file cannot be read, the window
+/// shows the settings that jik uses (`config` and `current`), and a save replaces the files.
+fn settings_to_show(
+    files: &Files,
+    config: &Config,
+    current: &[Question],
+) -> (Config, Vec<Question>) {
+    match read_files(files) {
         Ok(on_disk) => on_disk,
         Err(err) => {
             glasskit::show_error(
@@ -46,15 +81,6 @@ The Settings window shows the settings that jik uses now.                      S
                 ),
             );
             (config.clone(), current.to_vec())
-        }
-    };
-    match settings::edit(ui, &config, autostart, &current)? {
-        SettingsOutcome::Cancelled => Ok(Opened::Unchanged),
-        SettingsOutcome::Quit => Ok(Opened::Quit),
-        SettingsOutcome::Saved(edited) => {
-            save_config(&files.config, &edited.config)?;
-            questions::save(&files.questions, &edited.questions)?;
-            Ok(Opened::Saved(edited))
         }
     }
 }
