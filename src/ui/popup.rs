@@ -91,6 +91,8 @@ fn to_reply(reply: Reply) -> PopupReply {
         Response::Dismissed => PopupResult::Skipped,
         Response::TimedOut => PopupResult::TimedOut,
         Response::Quit => PopupResult::Quit,
+        // jik asks for no typed answer. Anything else counts as a skip.
+        _ => PopupResult::Skipped,
     };
     PopupReply {
         result,

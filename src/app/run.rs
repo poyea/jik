@@ -171,6 +171,7 @@ pub fn run_tray<P: Popup>(
                 }
                 false
             }
+            _ => false,
         };
 
         if ask_now {
